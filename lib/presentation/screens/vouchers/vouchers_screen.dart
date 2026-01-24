@@ -9,11 +9,13 @@ import 'print_vouchers_screen.dart';
 
 class VouchersArgs {
   const VouchersArgs({
+    required this.routerId,
     required this.host,
     required this.username,
     required this.password,
   });
 
+  final String routerId;
   final String host;
   final String username;
   final String password;
@@ -28,8 +30,7 @@ class VouchersScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Prefer MAC-based routerId if present later; for now we key by host.
-    final routerId = args.host;
+    final routerId = args.routerId;
     final vouchers = ref.watch(vouchersProvider(routerId));
 
     return Scaffold(

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../providers/router_providers.dart';
 import 'routers_discovery_screen.dart';
+import 'saved_router_connect_screen.dart';
 
 class RoutersScreen extends ConsumerWidget {
   const RoutersScreen({super.key});
@@ -55,6 +56,12 @@ class RoutersScreen extends ConsumerWidget {
                     leading: const Icon(Icons.router_outlined),
                     title: Text(r.name),
                     subtitle: Text(subtitle.isEmpty ? 'Saved router' : subtitle),
+                    onTap: () {
+                      context.push(
+                        SavedRouterConnectScreen.routePath,
+                        extra: r,
+                      );
+                    },
                     trailing: IconButton(
                       tooltip: 'Remove',
                       icon: const Icon(Icons.delete_outline),

@@ -10,11 +10,13 @@ import '../vouchers/vouchers_screen.dart';
 
 class HotspotSetupArgs {
   const HotspotSetupArgs({
+    required this.routerId,
     required this.host,
     required this.username,
     required this.password,
   });
 
+  final String routerId;
   final String host;
   final String username;
   final String password;
@@ -303,6 +305,7 @@ class _HotspotSetupWizardScreenState extends State<HotspotSetupWizardScreen> {
       context.go(
         VouchersScreen.routePath,
         extra: VouchersArgs(
+          routerId: widget.args.routerId,
           host: widget.args.host,
           username: widget.args.username,
           password: widget.args.password,

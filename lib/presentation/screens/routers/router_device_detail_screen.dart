@@ -132,14 +132,24 @@ class _RouterDeviceDetailScreenState extends ConsumerState<RouterDeviceDetailScr
       return;
     }
 
+    final routerId = _routerIdFromMessageOrHost(host);
     context.push(
       HotspotSetupWizardScreen.routePath,
       extra: HotspotSetupArgs(
+        routerId: routerId,
         host: host,
         username: username,
         password: password,
       ),
     );
+  }
+
+  String _routerIdFromMessageOrHost(String host) {
+    final mac = widget.message.macAddress;
+    if (mac != null && mac.trim().isNotEmpty) {
+      return mac.trim().replaceAll(':', '-').toLowerCase();
+    }
+    return host;
   }
 
   Future<void> _saveRouter() async {

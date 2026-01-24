@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../providers/auth_providers.dart';
 import '../routers/routers_screen.dart';
+import '../vouchers/vouchers_hub_screen.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -65,11 +66,7 @@ class DashboardScreen extends ConsumerWidget {
                       title: 'Vouchers',
                       subtitle: 'Create & print vouchers',
                       onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Coming next: vouchers module'),
-                          ),
-                        );
+                        context.go(VouchersHubScreen.routePath);
                       },
                     ),
                     _QuickAction(

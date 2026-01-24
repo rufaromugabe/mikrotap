@@ -12,10 +12,13 @@ import '../presentation/screens/routers/hotspot_setup_wizard_screen.dart';
 import '../presentation/screens/routers/router_initialization_screen.dart';
 import '../presentation/screens/routers/routers_discovery_screen.dart';
 import '../presentation/screens/routers/routers_screen.dart';
+import '../presentation/screens/routers/saved_router_connect_screen.dart';
 import '../presentation/screens/vouchers/generate_vouchers_screen.dart';
 import '../presentation/screens/vouchers/print_vouchers_screen.dart';
 import '../presentation/screens/vouchers/vouchers_screen.dart';
+import '../presentation/screens/vouchers/vouchers_hub_screen.dart';
 import 'package:mikrotik_mndp/message.dart';
+import '../data/models/router_entry.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final repo = ref.watch(authRepositoryProvider);
@@ -52,6 +55,18 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutersScreen.routePath,
         builder: (context, state) => const RoutersScreen(),
+      ),
+      GoRoute(
+        path: SavedRouterConnectScreen.routePath,
+        builder: (context, state) {
+          final extra = state.extra;
+          if (extra is! RouterEntry) {
+            return const Scaffold(
+              body: SafeArea(child: Center(child: Text('Missing router data.'))),
+            );
+          }
+          return SavedRouterConnectScreen(router: extra);
+        },
       ),
       GoRoute(
         path: RoutersDiscoveryScreen.routePath,
@@ -104,6 +119,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           }
           return VouchersScreen(args: extra);
         },
+      ),
+      GoRoute(
+        path: VouchersHubScreen.routePath,
+        builder: (context, state) => const VouchersHubScreen(),
       ),
       GoRoute(
         path: GenerateVouchersScreen.routePath,

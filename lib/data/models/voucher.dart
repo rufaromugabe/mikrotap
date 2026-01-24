@@ -51,5 +51,45 @@ class Voucher {
       status: status ?? this.status,
     );
   }
+
+  Map<String, dynamic> toMap() {
+    return <String, dynamic>{
+      'id': id,
+      'routerId': routerId,
+      'username': username,
+      'password': password,
+      'profile': profile,
+      'price': price,
+      'createdAt': createdAt.toIso8601String(),
+      'expiresAt': expiresAt?.toIso8601String(),
+      'status': status.name,
+    };
+  }
+
+  static Voucher fromMap(Map<String, dynamic> map) {
+    DateTime parseDt(dynamic v) {
+      if (v is DateTime) return v;
+      if (v is String) return DateTime.tryParse(v) ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return DateTime.fromMillisecondsSinceEpoch(0);
+    }
+
+    final statusStr = (map['status'] as String?) ?? 'active';
+    final parsedStatus = VoucherStatus.values.firstWhere(
+      (s) => s.name == statusStr,
+      orElse: () => VoucherStatus.active,
+    );
+
+    return Voucher(
+      id: (map['id'] as String?) ?? '',
+      routerId: (map['routerId'] as String?) ?? '',
+      username: (map['username'] as String?) ?? '',
+      password: (map['password'] as String?) ?? '',
+      profile: map['profile'] as String?,
+      price: map['price'] as num?,
+      createdAt: parseDt(map['createdAt']),
+      expiresAt: map['expiresAt'] == null ? null : parseDt(map['expiresAt']),
+      status: parsedStatus,
+    );
+  }
 }
 
