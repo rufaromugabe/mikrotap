@@ -8,6 +8,7 @@ import 'package:mikrotik_mndp/message.dart';
 import 'package:mikrotik_mndp/product_info_provider.dart';
 
 import 'router_device_detail_screen.dart';
+import 'routers_screen.dart';
 
 class RoutersDiscoveryScreen extends StatefulWidget {
   const RoutersDiscoveryScreen({super.key});
@@ -57,6 +58,10 @@ class _RoutersDiscoveryScreenState extends State<RoutersDiscoveryScreen> {
       appBar: AppBar(
         title: const Text('Router discovery (MNDP)'),
         actions: [
+          TextButton(
+            onPressed: () => context.go(RoutersScreen.routePath),
+            child: const Text('Saved'),
+          ),
           IconButton(
             tooltip: 'Clear list',
             onPressed: () => setState(_byMac.clear),
@@ -77,7 +82,8 @@ class _RoutersDiscoveryScreenState extends State<RoutersDiscoveryScreen> {
                 itemBuilder: (context, index) {
                   final d = devices[index];
                   final title = d.identity ?? d.boardName ?? 'MikroTik';
-                  final ip = d.unicastIpv4Address ?? d.unicastIpv6Address;
+                  final ipv4 = d.unicastIpv4Address;
+                  final ipv6 = d.unicastIpv6Address;
 
                   return Card(
                     child: ListTile(
@@ -85,7 +91,8 @@ class _RoutersDiscoveryScreenState extends State<RoutersDiscoveryScreen> {
                       title: Text(title),
                       subtitle: Text(
                         [
-                          if (ip != null && ip.isNotEmpty) 'IP: $ip',
+                          if (ipv4 != null && ipv4.isNotEmpty) 'IPv4: $ipv4',
+                          if (ipv6 != null && ipv6.isNotEmpty) 'IPv6: $ipv6',
                           if (d.macAddress != null) 'MAC: ${d.macAddress}',
                           if (d.version != null) 'v${d.version}',
                         ].join(' • '),

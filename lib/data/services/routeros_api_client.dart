@@ -30,7 +30,11 @@ class RouterOsApiClient {
 
   Future<void> connect() async {
     if (_socket != null) return;
-    final s = await Socket.connect(host, port, timeout: timeout);
+    // For IPv6 link-local, the host may include a zone like "%wlan0".
+    // Parsing to InternetAddress helps platforms that require explicit scope handling.
+    final parsed = InternetAddress.tryParse(host);
+    final target = parsed ?? host;
+    final s = await Socket.connect(target, port, timeout: timeout);
     s.setOption(SocketOption.tcpNoDelay, true);
     _socket = s;
     _streamError = null;

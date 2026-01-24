@@ -2,12 +2,17 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mikrotik_mndp/message.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../data/services/routeros_api_client.dart';
+import '../../providers/router_providers.dart';
+import '../../../data/models/router_entry.dart';
+import 'routers_screen.dart';
 
-class RouterDeviceDetailScreen extends StatefulWidget {
+class RouterDeviceDetailScreen extends ConsumerStatefulWidget {
   const RouterDeviceDetailScreen({super.key, required this.message});
 
   static const routePath = '/routers/device';
@@ -15,57 +20,41 @@ class RouterDeviceDetailScreen extends StatefulWidget {
   final MndpMessage message;
 
   @override
-  State<RouterDeviceDetailScreen> createState() => _RouterDeviceDetailScreenState();
+  ConsumerState<RouterDeviceDetailScreen> createState() =>
+      _RouterDeviceDetailScreenState();
 }
 
-class _RouterDeviceDetailScreenState extends State<RouterDeviceDetailScreen> {
-  bool _testing = false;
-  String? _testResult;
-
+class _RouterDeviceDetailScreenState extends ConsumerState<RouterDeviceDetailScreen> {
+  late final TextEditingController _hostCtrl;
   final _usernameCtrl = TextEditingController(text: 'admin');
   final _passwordCtrl = TextEditingController();
 
   bool _connecting = false;
   String? _apiStatus;
   Map<String, String>? _systemResource;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final m = widget.message;
+    final initialHost = (m.unicastIpv4Address?.trim().isNotEmpty == true)
+        ? m.unicastIpv4Address!.trim()
+        : (m.unicastIpv6Address?.trim() ?? '');
+    _hostCtrl = TextEditingController(text: initialHost);
+  }
 
   @override
   void dispose() {
+    _hostCtrl.dispose();
     _usernameCtrl.dispose();
     _passwordCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _testPort(int port) async {
-    final host = widget.message.unicastIpv4Address ?? widget.message.unicastIpv6Address;
-    if (host == null || host.isEmpty) {
-      setState(() => _testResult = 'No IP address found in MNDP message.');
-      return;
-    }
-
-    setState(() {
-      _testing = true;
-      _testResult = null;
-    });
-
-    try {
-      final socket = await Socket.connect(host, port, timeout: const Duration(seconds: 3));
-      socket.destroy();
-      setState(() => _testResult = 'OK: $host:$port is reachable.');
-    } on SocketException catch (e) {
-      setState(() => _testResult = 'Failed: $host:$port (${e.message})');
-    } on TimeoutException {
-      setState(() => _testResult = 'Timeout: $host:$port');
-    } catch (e) {
-      setState(() => _testResult = 'Error: $e');
-    } finally {
-      if (mounted) setState(() => _testing = false);
-    }
-  }
-
   Future<void> _connectAndFetch() async {
-    final host = widget.message.unicastIpv4Address ?? widget.message.unicastIpv6Address;
-    if (host == null || host.isEmpty) {
+    final host = _hostCtrl.text.trim();
+    if (host.isEmpty) {
       setState(() => _apiStatus = 'No IP address found in MNDP message.');
       return;
     }
@@ -112,10 +101,59 @@ class _RouterDeviceDetailScreenState extends State<RouterDeviceDetailScreen> {
     }
   }
 
+  Future<void> _saveRouter() async {
+    final m = widget.message;
+    final host = _hostCtrl.text.trim();
+    if (host.isEmpty) {
+      setState(() => _apiStatus = 'No IP address found to save.');
+      return;
+    }
+
+    setState(() => _saving = true);
+    try {
+      final now = DateTime.now();
+      final mac = m.macAddress;
+      final id = (mac != null && mac.trim().isNotEmpty)
+          ? mac.trim().replaceAll(':', '-').toLowerCase()
+          : const Uuid().v4();
+
+      final name = m.identity ?? m.boardName ?? (mac ?? 'MikroTik');
+      final entry = RouterEntry(
+        id: id,
+        name: name,
+        host: host,
+        macAddress: mac,
+        identity: m.identity,
+        boardName: m.boardName,
+        platform: m.platform,
+        version: m.version,
+        createdAt: now,
+        updatedAt: now,
+        lastSeenAt: now,
+      );
+
+      await ref.read(routerRepositoryProvider).upsertRouter(entry);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Router saved')),
+      );
+      context.go(RoutersScreen.routePath);
+    } catch (e) {
+      setState(() => _apiStatus = 'Save failed: $e');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final m = widget.message;
-    final ip = m.unicastIpv4Address ?? m.unicastIpv6Address;
+    final ipv4 = m.unicastIpv4Address;
+    final ipv6 = m.unicastIpv6Address;
+    final hasV4 = ipv4 != null && ipv4.trim().isNotEmpty;
+    final hasV6 = ipv6 != null && ipv6.trim().isNotEmpty;
+    final isLinkLocalV6 = hasV6 && ipv6.trim().toLowerCase().startsWith('fe80:');
+    final canSuggestWlan0 = Platform.isAndroid && isLinkLocalV6 && !ipv6.contains('%');
 
     return Scaffold(
       appBar: AppBar(
@@ -145,7 +183,8 @@ class _RouterDeviceDetailScreenState extends State<RouterDeviceDetailScreen> {
                     _kv('Platform', m.platform),
                     _kv('Version', m.version),
                     _kv('MAC', m.macAddress),
-                    _kv('IP', ip),
+                    _kv('IPv4', ipv4),
+                    _kv('IPv6', ipv6),
                     _kv('Interface', m.interfaceName),
                     _kv('Software ID', m.softwareId),
                   ],
@@ -160,9 +199,57 @@ class _RouterDeviceDetailScreenState extends State<RouterDeviceDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Connect / test',
+                      'Connect',
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _hostCtrl,
+                      decoration: InputDecoration(
+                        labelText: 'Host / IP (IPv4 or IPv6)',
+                        hintText: isLinkLocalV6
+                            ? 'Example: fe80::a00:27ff:fe0f:b9fa%wlan0'
+                            : null,
+                        border: const OutlineInputBorder(),
+                      ),
+                      enabled: !_connecting && !_saving,
+                      textInputAction: TextInputAction.next,
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        if (hasV4)
+                          OutlinedButton(
+                            onPressed: (_connecting || _saving)
+                                ? null
+                                : () => _hostCtrl.text = ipv4.trim(),
+                            child: const Text('Use IPv4'),
+                          ),
+                        if (hasV6)
+                          OutlinedButton(
+                            onPressed: (_connecting || _saving)
+                                ? null
+                                : () => _hostCtrl.text = ipv6.trim(),
+                            child: const Text('Use IPv6'),
+                          ),
+                        if (canSuggestWlan0)
+                          OutlinedButton(
+                            onPressed: (_connecting || _saving)
+                                ? null
+                                : () => _hostCtrl.text = '${ipv6.trim()}%wlan0',
+                            child: const Text('Use IPv6 (%wlan0)'),
+                          ),
+                      ],
+                    ),
+                    if (isLinkLocalV6) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'IPv6 link-local addresses (fe80::/10) often require a scope like %wlan0 (Android) or %<ifIndex> (Windows).',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
                     const SizedBox(height: 10),
                     TextField(
                       controller: _usernameCtrl,
@@ -171,7 +258,7 @@ class _RouterDeviceDetailScreenState extends State<RouterDeviceDetailScreen> {
                         border: OutlineInputBorder(),
                       ),
                       textInputAction: TextInputAction.next,
-                      enabled: !_connecting && !_testing,
+                      enabled: !_connecting && !_saving,
                     ),
                     const SizedBox(height: 10),
                     TextField(
@@ -181,7 +268,7 @@ class _RouterDeviceDetailScreenState extends State<RouterDeviceDetailScreen> {
                         border: OutlineInputBorder(),
                       ),
                       obscureText: true,
-                      enabled: !_connecting && !_testing,
+                      enabled: !_connecting && !_saving,
                       onSubmitted: (_) => _connecting ? null : _connectAndFetch(),
                     ),
                     const SizedBox(height: 10),
@@ -190,7 +277,7 @@ class _RouterDeviceDetailScreenState extends State<RouterDeviceDetailScreen> {
                       runSpacing: 10,
                       children: [
                         FilledButton.icon(
-                          onPressed: (_connecting || _testing) ? null : _connectAndFetch,
+                          onPressed: (_connecting || _saving) ? null : _connectAndFetch,
                           icon: _connecting
                               ? const SizedBox(
                                   width: 18,
@@ -201,35 +288,18 @@ class _RouterDeviceDetailScreenState extends State<RouterDeviceDetailScreen> {
                           label: const Text('Connect (API 8728)'),
                         ),
                         FilledButton.icon(
-                          onPressed: _testing ? null : () => _testPort(8728),
-                          icon: const Icon(Icons.bolt),
-                          label: const Text('Test API 8728'),
-                        ),
-                        FilledButton.icon(
-                          onPressed: _testing ? null : () => _testPort(8729),
-                          icon: const Icon(Icons.bolt),
-                          label: const Text('Test API-SSL 8729'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: _testing ? null : () => _testPort(80),
-                          icon: const Icon(Icons.public),
-                          label: const Text('Test HTTP 80'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: _testing ? null : () => _testPort(443),
-                          icon: const Icon(Icons.lock),
-                          label: const Text('Test HTTPS 443'),
+                          onPressed: (_saving || _connecting) ? null : _saveRouter,
+                          icon: _saving
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.save_outlined),
+                          label: const Text('Save router'),
                         ),
                       ],
                     ),
-                    if (_testing) ...[
-                      const SizedBox(height: 12),
-                      const LinearProgressIndicator(),
-                    ],
-                    if (_testResult != null) ...[
-                      const SizedBox(height: 12),
-                      Text(_testResult!),
-                    ],
                     if (_apiStatus != null) ...[
                       const SizedBox(height: 12),
                       Text(_apiStatus!),
@@ -249,7 +319,7 @@ class _RouterDeviceDetailScreenState extends State<RouterDeviceDetailScreen> {
                     ],
                     const SizedBox(height: 12),
                     Text(
-                      'Tip: enable RouterOS API service if login fails (IP → Services → api).',
+                      'Tip: enable RouterOS API service if connect fails (IP → Services → api).',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],

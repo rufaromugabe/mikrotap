@@ -9,6 +9,7 @@ import '../presentation/screens/auth/splash_screen.dart';
 import '../presentation/screens/dashboard/dashboard_screen.dart';
 import '../presentation/screens/routers/router_device_detail_screen.dart';
 import '../presentation/screens/routers/routers_discovery_screen.dart';
+import '../presentation/screens/routers/routers_screen.dart';
 import 'package:mikrotik_mndp/message.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -42,6 +43,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: DashboardScreen.routePath,
         builder: (context, state) => const DashboardScreen(),
+      ),
+      GoRoute(
+        path: RoutersScreen.routePath,
+        builder: (context, state) => const RoutersScreen(),
       ),
       GoRoute(
         path: RoutersDiscoveryScreen.routePath,
