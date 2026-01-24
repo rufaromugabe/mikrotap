@@ -99,6 +99,99 @@ class RouterOsApiClient {
     return await _readUntilDone();
   }
 
+  /// Convenience: run a RouterOS "print" and return `!re` rows as attribute maps.
+  ///
+  /// Example:
+  /// `await printRows('/ip/service/print')`
+  /// `await printRows('/ip/service/print', queries: ['?name=api'])`
+  Future<List<Map<String, String>>> printRows(
+    String printPath, {
+    List<String> queries = const [],
+  }) async {
+    final resp = await command([printPath, ...queries]);
+    _throwIfTrap(resp, fallback: 'RouterOS print failed');
+    return resp.where((s) => s.type == '!re').map((s) => s.attributes).toList();
+  }
+
+  /// Convenience: add an item (`/path/add`) with attributes (`=k=v`).
+  ///
+  /// If the item already exists, RouterOS may return `!trap`; callers can catch
+  /// and decide whether to ignore based on the message.
+  Future<void> add(
+    String addPath,
+    Map<String, String> attrs, {
+    List<String> extraWords = const [],
+  }) async {
+    final words = <String>[addPath, ..._attrsToWords(attrs), ...extraWords];
+    final resp = await command(words);
+    _throwIfTrap(resp, fallback: 'RouterOS add failed ($addPath)');
+  }
+
+  /// Convenience: set an item by id (`=.id=*X`) with attributes (`=k=v`).
+  Future<void> setById(
+    String setPath, {
+    required String id,
+    required Map<String, String> attrs,
+    List<String> extraWords = const [],
+  }) async {
+    final words = <String>[setPath, '=.id=$id', ..._attrsToWords(attrs), ...extraWords];
+    final resp = await command(words);
+    _throwIfTrap(resp, fallback: 'RouterOS set failed ($setPath)');
+  }
+
+  /// Convenience: enable an item by id.
+  Future<void> enableById(String enablePath, {required String id}) async {
+    final resp = await command([enablePath, '=.id=$id']);
+    _throwIfTrap(resp, fallback: 'RouterOS enable failed ($enablePath)');
+  }
+
+  /// Convenience: disable an item by id.
+  Future<void> disableById(String disablePath, {required String id}) async {
+    final resp = await command([disablePath, '=.id=$id']);
+    _throwIfTrap(resp, fallback: 'RouterOS disable failed ($disablePath)');
+  }
+
+  /// Finds the first row (from a print) matching `key == value`.
+  Future<Map<String, String>?> findOne(
+    String printPath, {
+    required String key,
+    required String value,
+  }) async {
+    final rows = await printRows(printPath);
+    for (final r in rows) {
+      if ((r[key] ?? '') == value) return r;
+    }
+    return null;
+  }
+
+  /// Find `.id` for the first row matching `key == value`.
+  Future<String?> findId(
+    String printPath, {
+    required String key,
+    required String value,
+  }) async {
+    final row = await findOne(printPath, key: key, value: value);
+    return row?['.id'];
+  }
+
+  static List<String> _attrsToWords(Map<String, String> attrs) {
+    return attrs.entries.map((e) => '=${e.key}=${e.value}').toList();
+  }
+
+  static void _throwIfTrap(List<RouterOsSentence> resp, {required String fallback}) {
+    final trap = resp.where((s) => s.type == '!trap').toList();
+    if (trap.isEmpty) return;
+
+    // RouterOS typically provides '=message=...' and sometimes '=category=...'
+    final first = trap.first.attributes;
+    final msg = first['message'] ?? fallback;
+    final cat = first['category'];
+    if (cat != null && cat.isNotEmpty) {
+      throw RouterOsApiException('$msg (category: $cat)');
+    }
+    throw RouterOsApiException(msg);
+  }
+
   void _writeSentence(List<String> words) {
     final s = _socket;
     if (s == null) throw StateError('Not connected');

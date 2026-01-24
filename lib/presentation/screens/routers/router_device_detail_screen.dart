@@ -11,6 +11,8 @@ import '../../../data/services/routeros_api_client.dart';
 import '../../providers/router_providers.dart';
 import '../../../data/models/router_entry.dart';
 import 'routers_discovery_screen.dart';
+import 'router_initialization_screen.dart';
+import 'hotspot_setup_wizard_screen.dart';
 import 'routers_screen.dart';
 
 class RouterDeviceDetailScreen extends ConsumerStatefulWidget {
@@ -100,6 +102,44 @@ class _RouterDeviceDetailScreenState extends ConsumerState<RouterDeviceDetailScr
       await client.close();
       if (mounted) setState(() => _connecting = false);
     }
+  }
+
+  void _openInitialization() {
+    final host = _hostCtrl.text;
+    final username = _usernameCtrl.text.trim();
+    final password = _passwordCtrl.text;
+    if (host.isEmpty || username.isEmpty) {
+      setState(() => _apiStatus = 'Host + username required for initialization.');
+      return;
+    }
+
+    context.push(
+      RouterInitializationScreen.routePath,
+      extra: RouterInitializationArgs(
+        host: host,
+        username: username,
+        password: password,
+      ),
+    );
+  }
+
+  void _openHotspotSetup() {
+    final host = _hostCtrl.text;
+    final username = _usernameCtrl.text.trim();
+    final password = _passwordCtrl.text;
+    if (host.isEmpty || username.isEmpty) {
+      setState(() => _apiStatus = 'Host + username required for hotspot setup.');
+      return;
+    }
+
+    context.push(
+      HotspotSetupWizardScreen.routePath,
+      extra: HotspotSetupArgs(
+        host: host,
+        username: username,
+        password: password,
+      ),
+    );
   }
 
   Future<void> _saveRouter() async {
@@ -299,6 +339,20 @@ class _RouterDeviceDetailScreenState extends ConsumerState<RouterDeviceDetailScr
                                 )
                               : const Icon(Icons.link),
                           label: const Text('Connect (API 8728)'),
+                        ),
+                        FilledButton.icon(
+                          onPressed: (_systemResource == null || _connecting || _saving)
+                              ? null
+                              : _openInitialization,
+                          icon: const Icon(Icons.tune),
+                          label: const Text('Initialize'),
+                        ),
+                        FilledButton.icon(
+                          onPressed: (_systemResource == null || _connecting || _saving)
+                              ? null
+                              : _openHotspotSetup,
+                          icon: const Icon(Icons.wifi_tethering),
+                          label: const Text('Hotspot setup'),
                         ),
                         FilledButton.icon(
                           onPressed: (_saving || _connecting) ? null : _saveRouter,

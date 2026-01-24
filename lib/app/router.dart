@@ -8,8 +8,13 @@ import '../presentation/screens/auth/login_screen.dart';
 import '../presentation/screens/auth/splash_screen.dart';
 import '../presentation/screens/dashboard/dashboard_screen.dart';
 import '../presentation/screens/routers/router_device_detail_screen.dart';
+import '../presentation/screens/routers/hotspot_setup_wizard_screen.dart';
+import '../presentation/screens/routers/router_initialization_screen.dart';
 import '../presentation/screens/routers/routers_discovery_screen.dart';
 import '../presentation/screens/routers/routers_screen.dart';
+import '../presentation/screens/vouchers/generate_vouchers_screen.dart';
+import '../presentation/screens/vouchers/print_vouchers_screen.dart';
+import '../presentation/screens/vouchers/vouchers_screen.dart';
 import 'package:mikrotik_mndp/message.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -62,6 +67,66 @@ final routerProvider = Provider<GoRouter>((ref) {
             );
           }
           return RouterDeviceDetailScreen(message: extra);
+        },
+      ),
+      GoRoute(
+        path: RouterInitializationScreen.routePath,
+        builder: (context, state) {
+          final extra = state.extra;
+          if (extra is! RouterInitializationArgs) {
+            return const Scaffold(
+              body: SafeArea(child: Center(child: Text('Missing initialization data.'))),
+            );
+          }
+          return RouterInitializationScreen(args: extra);
+        },
+      ),
+      GoRoute(
+        path: HotspotSetupWizardScreen.routePath,
+        builder: (context, state) {
+          final extra = state.extra;
+          if (extra is! HotspotSetupArgs) {
+            return const Scaffold(
+              body: SafeArea(child: Center(child: Text('Missing hotspot setup data.'))),
+            );
+          }
+          return HotspotSetupWizardScreen(args: extra);
+        },
+      ),
+      GoRoute(
+        path: VouchersScreen.routePath,
+        builder: (context, state) {
+          final extra = state.extra;
+          if (extra is! VouchersArgs) {
+            return const Scaffold(
+              body: SafeArea(child: Center(child: Text('Missing vouchers data.'))),
+            );
+          }
+          return VouchersScreen(args: extra);
+        },
+      ),
+      GoRoute(
+        path: GenerateVouchersScreen.routePath,
+        builder: (context, state) {
+          final extra = state.extra;
+          if (extra is! GenerateVouchersArgs) {
+            return const Scaffold(
+              body: SafeArea(child: Center(child: Text('Missing generator data.'))),
+            );
+          }
+          return GenerateVouchersScreen(args: extra);
+        },
+      ),
+      GoRoute(
+        path: PrintVouchersScreen.routePath,
+        builder: (context, state) {
+          final extra = state.extra;
+          if (extra is! PrintVouchersArgs) {
+            return const Scaffold(
+              body: SafeArea(child: Center(child: Text('Missing print data.'))),
+            );
+          }
+          return PrintVouchersScreen(args: extra);
         },
       ),
       GoRoute(
