@@ -99,7 +99,7 @@ class _RoutersDiscoveryScreenState extends State<RoutersDiscoveryScreen> {
                       ),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () {
-                        context.go(
+                        context.push(
                           RouterDeviceDetailScreen.routePath,
                           extra: d,
                         );

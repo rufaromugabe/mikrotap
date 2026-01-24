@@ -10,6 +10,7 @@ import 'package:uuid/uuid.dart';
 import '../../../data/services/routeros_api_client.dart';
 import '../../providers/router_providers.dart';
 import '../../../data/models/router_entry.dart';
+import 'routers_discovery_screen.dart';
 import 'routers_screen.dart';
 
 class RouterDeviceDetailScreen extends ConsumerStatefulWidget {
@@ -38,9 +39,9 @@ class _RouterDeviceDetailScreenState extends ConsumerState<RouterDeviceDetailScr
   void initState() {
     super.initState();
     final m = widget.message;
-    final initialHost = (m.unicastIpv4Address?.trim().isNotEmpty == true)
-        ? m.unicastIpv4Address!.trim()
-        : (m.unicastIpv6Address?.trim() ?? '');
+    final initialHost = (m.unicastIpv4Address?.isNotEmpty == true)
+        ? m.unicastIpv4Address!
+        : (m.unicastIpv6Address ?? '');
     _hostCtrl = TextEditingController(text: initialHost);
   }
 
@@ -53,7 +54,7 @@ class _RouterDeviceDetailScreenState extends ConsumerState<RouterDeviceDetailScr
   }
 
   Future<void> _connectAndFetch() async {
-    final host = _hostCtrl.text.trim();
+    final host = _hostCtrl.text;
     if (host.isEmpty) {
       setState(() => _apiStatus = 'No IP address found in MNDP message.');
       return;
@@ -103,7 +104,7 @@ class _RouterDeviceDetailScreenState extends ConsumerState<RouterDeviceDetailScr
 
   Future<void> _saveRouter() async {
     final m = widget.message;
-    final host = _hostCtrl.text.trim();
+    final host = _hostCtrl.text;
     if (host.isEmpty) {
       setState(() => _apiStatus = 'No IP address found to save.');
       return;
@@ -150,21 +151,39 @@ class _RouterDeviceDetailScreenState extends ConsumerState<RouterDeviceDetailScr
     final m = widget.message;
     final ipv4 = m.unicastIpv4Address;
     final ipv6 = m.unicastIpv6Address;
-    final hasV4 = ipv4 != null && ipv4.trim().isNotEmpty;
-    final hasV6 = ipv6 != null && ipv6.trim().isNotEmpty;
-    final isLinkLocalV6 = hasV6 && ipv6.trim().toLowerCase().startsWith('fe80:');
-    final canSuggestWlan0 = Platform.isAndroid && isLinkLocalV6 && !ipv6.contains('%');
+    final hasV4 = ipv4 != null && ipv4.isNotEmpty;
+    final hasV6 = ipv6 != null && ipv6.isNotEmpty;
+    // Note: link-local IPv6 may need a zone (e.g. %wlan0); users can type it in Host.
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(m.identity ?? m.boardName ?? 'Router'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        // If there is nothing to pop (e.g. opened via deep link), route somewhere safe.
+        if (didPop) return;
+        final router = GoRouter.of(context);
+        if (router.canPop()) {
+          context.pop();
+        } else {
+          context.go(RoutersDiscoveryScreen.routePath);
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(m.identity ?? m.boardName ?? 'Router'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () {
+              final router = GoRouter.of(context);
+              if (router.canPop()) {
+                context.pop();
+              } else {
+                context.go(RoutersDiscoveryScreen.routePath);
+              }
+            },
+          ),
         ),
-      ),
-      body: SafeArea(
-        child: ListView(
+        body: SafeArea(
+          child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             Card(
@@ -207,9 +226,6 @@ class _RouterDeviceDetailScreenState extends ConsumerState<RouterDeviceDetailScr
                       controller: _hostCtrl,
                       decoration: InputDecoration(
                         labelText: 'Host / IP (IPv4 or IPv6)',
-                        hintText: isLinkLocalV6
-                            ? 'Example: fe80::a00:27ff:fe0f:b9fa%wlan0'
-                            : null,
                         border: const OutlineInputBorder(),
                       ),
                       enabled: !_connecting && !_saving,
@@ -224,32 +240,29 @@ class _RouterDeviceDetailScreenState extends ConsumerState<RouterDeviceDetailScr
                           OutlinedButton(
                             onPressed: (_connecting || _saving)
                                 ? null
-                                : () => _hostCtrl.text = ipv4.trim(),
+                                : () => _hostCtrl.text = ipv4,
                             child: const Text('Use IPv4'),
                           ),
                         if (hasV6)
                           OutlinedButton(
                             onPressed: (_connecting || _saving)
                                 ? null
-                                : () => _hostCtrl.text = ipv6.trim(),
+                                : () {
+                                    // On Android, IPv6 link-local (fe80::/10) typically needs a zone id.
+                                    // Keep UI simple: auto-append %wlan0 if missing.
+                                    final v = ipv6;
+                                    if (Platform.isAndroid &&
+                                        v.toLowerCase().startsWith('fe80:') &&
+                                        !v.contains('%')) {
+                                      _hostCtrl.text = '$v%wlan0';
+                                    } else {
+                                      _hostCtrl.text = v;
+                                    }
+                                  },
                             child: const Text('Use IPv6'),
-                          ),
-                        if (canSuggestWlan0)
-                          OutlinedButton(
-                            onPressed: (_connecting || _saving)
-                                ? null
-                                : () => _hostCtrl.text = '${ipv6.trim()}%wlan0',
-                            child: const Text('Use IPv6 (%wlan0)'),
                           ),
                       ],
                     ),
-                    if (isLinkLocalV6) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        'IPv6 link-local addresses (fe80::/10) often require a scope like %wlan0 (Android) or %<ifIndex> (Windows).',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
                     const SizedBox(height: 10),
                     TextField(
                       controller: _usernameCtrl,
@@ -327,6 +340,7 @@ class _RouterDeviceDetailScreenState extends ConsumerState<RouterDeviceDetailScr
               ),
             ),
           ],
+          ),
         ),
       ),
     );
