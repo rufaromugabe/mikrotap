@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../providers/auth_providers.dart';
+import '../routers/routers_discovery_screen.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -75,11 +77,7 @@ class DashboardScreen extends ConsumerWidget {
                       title: 'Routers',
                       subtitle: 'Add & sync MikroTik routers',
                       onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Coming next: routers module'),
-                          ),
-                        );
+                        context.go(RoutersDiscoveryScreen.routePath);
                       },
                     ),
                     _QuickAction(

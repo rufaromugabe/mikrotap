@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/utils/go_router_refresh_stream.dart';
@@ -6,6 +7,9 @@ import '../presentation/providers/auth_providers.dart';
 import '../presentation/screens/auth/login_screen.dart';
 import '../presentation/screens/auth/splash_screen.dart';
 import '../presentation/screens/dashboard/dashboard_screen.dart';
+import '../presentation/screens/routers/router_device_detail_screen.dart';
+import '../presentation/screens/routers/routers_discovery_screen.dart';
+import 'package:mikrotik_mndp/message.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final repo = ref.watch(authRepositoryProvider);
@@ -38,6 +42,22 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: DashboardScreen.routePath,
         builder: (context, state) => const DashboardScreen(),
+      ),
+      GoRoute(
+        path: RoutersDiscoveryScreen.routePath,
+        builder: (context, state) => const RoutersDiscoveryScreen(),
+      ),
+      GoRoute(
+        path: RouterDeviceDetailScreen.routePath,
+        builder: (context, state) {
+          final extra = state.extra;
+          if (extra is! MndpMessage) {
+            return const Scaffold(
+              body: SafeArea(child: Center(child: Text('Missing router details.'))),
+            );
+          }
+          return RouterDeviceDetailScreen(message: extra);
+        },
       ),
       GoRoute(
         path: SplashScreen.routePath,
