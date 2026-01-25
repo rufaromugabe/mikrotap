@@ -14,7 +14,15 @@ class Voucher {
     this.profile,
     this.price,
     required this.createdAt,
+    this.soldAt,
+    this.soldByUserId,
+    this.soldByName,
     this.expiresAt,
+    this.firstUsedAt,
+    this.usageBytesIn,
+    this.usageBytesOut,
+    this.routerUptime,
+    this.lastSyncedAt,
     this.status = VoucherStatus.active,
   });
 
@@ -25,7 +33,15 @@ class Voucher {
   final String? profile;
   final num? price;
   final DateTime createdAt;
+  final DateTime? soldAt;
+  final String? soldByUserId;
+  final String? soldByName;
   final DateTime? expiresAt;
+  final DateTime? firstUsedAt;
+  final int? usageBytesIn;
+  final int? usageBytesOut;
+  final String? routerUptime;
+  final DateTime? lastSyncedAt;
   final VoucherStatus status;
 
   Voucher copyWith({
@@ -36,7 +52,15 @@ class Voucher {
     String? profile,
     num? price,
     DateTime? createdAt,
+    DateTime? soldAt,
+    String? soldByUserId,
+    String? soldByName,
     DateTime? expiresAt,
+    DateTime? firstUsedAt,
+    int? usageBytesIn,
+    int? usageBytesOut,
+    String? routerUptime,
+    DateTime? lastSyncedAt,
     VoucherStatus? status,
   }) {
     return Voucher(
@@ -47,7 +71,15 @@ class Voucher {
       profile: profile ?? this.profile,
       price: price ?? this.price,
       createdAt: createdAt ?? this.createdAt,
+      soldAt: soldAt ?? this.soldAt,
+      soldByUserId: soldByUserId ?? this.soldByUserId,
+      soldByName: soldByName ?? this.soldByName,
       expiresAt: expiresAt ?? this.expiresAt,
+      firstUsedAt: firstUsedAt ?? this.firstUsedAt,
+      usageBytesIn: usageBytesIn ?? this.usageBytesIn,
+      usageBytesOut: usageBytesOut ?? this.usageBytesOut,
+      routerUptime: routerUptime ?? this.routerUptime,
+      lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
       status: status ?? this.status,
     );
   }
@@ -61,7 +93,15 @@ class Voucher {
       'profile': profile,
       'price': price,
       'createdAt': createdAt.toIso8601String(),
+      'soldAt': soldAt?.toIso8601String(),
+      'soldByUserId': soldByUserId,
+      'soldByName': soldByName,
       'expiresAt': expiresAt?.toIso8601String(),
+      'firstUsedAt': firstUsedAt?.toIso8601String(),
+      'usageBytesIn': usageBytesIn,
+      'usageBytesOut': usageBytesOut,
+      'routerUptime': routerUptime,
+      'lastSyncedAt': lastSyncedAt?.toIso8601String(),
       'status': status.name,
     };
   }
@@ -87,7 +127,15 @@ class Voucher {
       profile: map['profile'] as String?,
       price: map['price'] as num?,
       createdAt: parseDt(map['createdAt']),
+      soldAt: map['soldAt'] == null ? null : parseDt(map['soldAt']),
+      soldByUserId: map['soldByUserId'] as String?,
+      soldByName: map['soldByName'] as String?,
       expiresAt: map['expiresAt'] == null ? null : parseDt(map['expiresAt']),
+      firstUsedAt: map['firstUsedAt'] == null ? null : parseDt(map['firstUsedAt']),
+      usageBytesIn: (map['usageBytesIn'] as num?)?.toInt(),
+      usageBytesOut: (map['usageBytesOut'] as num?)?.toInt(),
+      routerUptime: map['routerUptime'] as String?,
+      lastSyncedAt: map['lastSyncedAt'] == null ? null : parseDt(map['lastSyncedAt']),
       status: parsedStatus,
     );
   }

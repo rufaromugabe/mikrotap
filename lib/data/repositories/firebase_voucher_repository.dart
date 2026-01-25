@@ -62,7 +62,15 @@ class FirebaseVoucherRepository implements VoucherRepository {
       profile: data['profile'] as String?,
       price: data['price'] as num?,
       createdAt: dt(data['createdAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
+      soldAt: dt(data['soldAt']),
+      soldByUserId: data['soldByUserId'] as String?,
+      soldByName: data['soldByName'] as String?,
       expiresAt: dt(data['expiresAt']),
+      firstUsedAt: dt(data['firstUsedAt']),
+      usageBytesIn: (data['usageBytesIn'] as num?)?.toInt(),
+      usageBytesOut: (data['usageBytesOut'] as num?)?.toInt(),
+      routerUptime: data['routerUptime'] as String?,
+      lastSyncedAt: dt(data['lastSyncedAt']),
       status: status,
     );
   }
@@ -75,7 +83,15 @@ class FirebaseVoucherRepository implements VoucherRepository {
       'profile': v.profile,
       'price': v.price,
       'createdAt': ts(v.createdAt),
+      if (v.soldAt != null) 'soldAt': ts(v.soldAt!),
+      if (v.soldByUserId != null) 'soldByUserId': v.soldByUserId,
+      if (v.soldByName != null) 'soldByName': v.soldByName,
       if (v.expiresAt != null) 'expiresAt': ts(v.expiresAt!),
+      if (v.firstUsedAt != null) 'firstUsedAt': ts(v.firstUsedAt!),
+      if (v.usageBytesIn != null) 'usageBytesIn': v.usageBytesIn,
+      if (v.usageBytesOut != null) 'usageBytesOut': v.usageBytesOut,
+      if (v.routerUptime != null) 'routerUptime': v.routerUptime,
+      if (v.lastSyncedAt != null) 'lastSyncedAt': ts(v.lastSyncedAt!),
       'status': v.status.name,
     };
   }

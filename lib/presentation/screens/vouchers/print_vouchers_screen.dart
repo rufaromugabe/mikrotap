@@ -13,7 +13,7 @@ class PrintVouchersArgs {
 class PrintVouchersScreen extends ConsumerWidget {
   const PrintVouchersScreen({super.key, required this.args});
 
-  static const routePath = '/vouchers/print';
+  static const routePath = '/workspace/vouchers/print';
 
   final PrintVouchersArgs args;
 

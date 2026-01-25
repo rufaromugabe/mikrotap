@@ -151,6 +151,12 @@ class RouterOsApiClient {
     _throwIfTrap(resp, fallback: 'RouterOS disable failed ($disablePath)');
   }
 
+  /// Convenience: remove an item by id.
+  Future<void> removeById(String removePath, {required String id}) async {
+    final resp = await command([removePath, '=.id=$id']);
+    _throwIfTrap(resp, fallback: 'RouterOS remove failed ($removePath)');
+  }
+
   /// Finds the first row (from a print) matching `key == value`.
   Future<Map<String, String>?> findOne(
     String printPath, {

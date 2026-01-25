@@ -8,7 +8,6 @@ import 'package:mikrotik_mndp/message.dart';
 import 'package:mikrotik_mndp/product_info_provider.dart';
 
 import 'router_device_detail_screen.dart';
-import 'routers_screen.dart';
 
 class RoutersDiscoveryScreen extends StatefulWidget {
   const RoutersDiscoveryScreen({super.key});
@@ -58,10 +57,6 @@ class _RoutersDiscoveryScreenState extends State<RoutersDiscoveryScreen> {
       appBar: AppBar(
         title: const Text('Router discovery (MNDP)'),
         actions: [
-          TextButton(
-            onPressed: () => context.go(RoutersScreen.routePath),
-            child: const Text('Saved'),
-          ),
           IconButton(
             tooltip: 'Clear list',
             onPressed: () => setState(_byMac.clear),

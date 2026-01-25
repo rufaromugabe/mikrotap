@@ -2,16 +2,19 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../data/models/router_entry.dart';
 import '../../../data/services/routeros_api_client.dart';
+import '../../providers/active_router_provider.dart';
 import '../vouchers/vouchers_screen.dart';
 import 'hotspot_setup_wizard_screen.dart';
+import 'router_home_screen.dart';
 import 'router_initialization_screen.dart';
 import 'routers_screen.dart';
 
-class SavedRouterConnectScreen extends StatefulWidget {
+class SavedRouterConnectScreen extends ConsumerStatefulWidget {
   const SavedRouterConnectScreen({super.key, required this.router});
 
   static const routePath = '/routers/saved/connect';
@@ -19,10 +22,11 @@ class SavedRouterConnectScreen extends StatefulWidget {
   final RouterEntry router;
 
   @override
-  State<SavedRouterConnectScreen> createState() => _SavedRouterConnectScreenState();
+  ConsumerState<SavedRouterConnectScreen> createState() =>
+      _SavedRouterConnectScreenState();
 }
 
-class _SavedRouterConnectScreenState extends State<SavedRouterConnectScreen> {
+class _SavedRouterConnectScreenState extends ConsumerState<SavedRouterConnectScreen> {
   late final TextEditingController _hostCtrl;
   final _usernameCtrl = TextEditingController(text: 'admin');
   final _passwordCtrl = TextEditingController();
@@ -70,6 +74,19 @@ class _SavedRouterConnectScreenState extends State<SavedRouterConnectScreen> {
         _connected = ok;
         _status = ok ? 'Connected.' : 'Connected, but no data returned.';
       });
+
+      if (ok && mounted) {
+        ref.read(activeRouterProvider.notifier).set(
+              ActiveRouterSession(
+                routerId: widget.router.id,
+                routerName: widget.router.name,
+                host: host,
+                username: username,
+                password: password,
+              ),
+            );
+        context.go(RouterHomeScreen.routePath);
+      }
     } on RouterOsApiException catch (e) {
       setState(() => _status = e.message);
     } on SocketException catch (e) {

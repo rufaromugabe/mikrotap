@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../data/services/routeros_api_client.dart';
-import 'routers_discovery_screen.dart';
+import 'router_home_screen.dart';
 import '../vouchers/vouchers_screen.dart';
 
 class HotspotSetupArgs {
@@ -25,7 +25,7 @@ class HotspotSetupArgs {
 class HotspotSetupWizardScreen extends StatefulWidget {
   const HotspotSetupWizardScreen({super.key, required this.args});
 
-  static const routePath = '/routers/hotspot-setup';
+  static const routePath = '/workspace/hotspot-setup';
 
   final HotspotSetupArgs args;
 
@@ -125,6 +125,23 @@ class _HotspotSetupWizardScreenState extends State<HotspotSetupWizardScreen> {
     }
 
     await _withClient((c) async {
+      // Safety snapshot: capture export output so user can copy/share if needed.
+      // Note: RouterOS prints the export lines as !re sentences; we store a short summary.
+      try {
+        final exportResp = await c.command(['/export']);
+        final lines = exportResp
+            .where((s) => s.type == '!re')
+            .map((s) => s.rawWords.skip(1).join(' '))
+            .where((l) => l.trim().isNotEmpty)
+            .take(20)
+            .toList();
+        if (lines.isNotEmpty) {
+          setState(() => _status = 'Backup snapshot (first lines):\n${lines.join('\n')}');
+        }
+      } catch (_) {
+        // Non-fatal.
+      }
+
       const bridge = 'bridgeHotspot';
       const pool = 'mikrotap-pool';
       const dhcp = 'mikrotap-dhcp';
@@ -299,6 +316,18 @@ class _HotspotSetupWizardScreenState extends State<HotspotSetupWizardScreen> {
         }
       }
 
+      // Minimal hardening: restrict API service to LAN network if possible.
+      // We set the api service 'address' to the LAN subnet derived from gateway/cidr.
+      try {
+        final apiId = await c.findId('/ip/service/print', key: 'name', value: 'api');
+        if (apiId != null) {
+          final allowed = network; // e.g. 192.168.88.0/24
+          await c.setById('/ip/service/set', id: apiId, attrs: {'address': allowed});
+        }
+      } catch (_) {
+        // Non-fatal; some RouterOS versions may differ.
+      }
+
       setState(() => _status = 'Hotspot provisioning applied.');
 
       if (!mounted) return;
@@ -337,190 +366,178 @@ class _HotspotSetupWizardScreenState extends State<HotspotSetupWizardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) return;
-        final r = GoRouter.of(context);
-        if (r.canPop()) {
-          context.pop();
-        } else {
-          context.go(RoutersDiscoveryScreen.routePath);
-        }
-      },
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Hotspot setup'),
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: () {
-              final r = GoRouter.of(context);
-              if (r.canPop()) {
-                context.pop();
-              } else {
-                context.go(RoutersDiscoveryScreen.routePath);
-              }
-            },
-          ),
-          actions: [
-            IconButton(
-              tooltip: 'Refresh interfaces',
-              onPressed: _loading ? null : _refreshInterfaces,
-              icon: const Icon(Icons.refresh),
-            ),
-            const SizedBox(width: 8),
-          ],
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Hotspot setup'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            final r = GoRouter.of(context);
+            if (r.canPop()) {
+              context.pop();
+            } else {
+              context.go(RouterHomeScreen.routePath);
+            }
+          },
         ),
-        body: SafeArea(
-          child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Interfaces', style: Theme.of(context).textTheme.titleMedium),
-                      const SizedBox(height: 10),
-                      DropdownButtonFormField<String>(
-                        value: _wanInterface,
-                        decoration: const InputDecoration(
-                          labelText: 'WAN interface (for NAT)',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: [
-                          const DropdownMenuItem(value: null, child: Text('None')),
-                          ..._interfaces
-                              .map((i) => i['name'])
-                              .whereType<String>()
-                              .map(
-                                (name) => DropdownMenuItem(
-                                  value: name,
-                                  child: Text(name),
-                                ),
-                              ),
-                        ],
-                        onChanged: _loading ? null : (v) => setState(() => _wanInterface = v),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'LAN interfaces (Hotspot bridge members)',
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                      const SizedBox(height: 8),
-                      ..._interfaces
-                          .map((i) => i['name'])
-                          .whereType<String>()
-                          .map((name) {
-                        final selected = _lanInterfaces.contains(name);
-                        return CheckboxListTile(
-                          value: selected,
-                          onChanged: _loading
-                              ? null
-                              : (v) {
-                                  setState(() {
-                                    if (v == true) {
-                                      _lanInterfaces.add(name);
-                                    } else {
-                                      _lanInterfaces.remove(name);
-                                    }
-                                  });
-                                },
-                          title: Text(name),
-                          dense: true,
-                          controlAffinity: ListTileControlAffinity.leading,
-                        );
-                      }),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('LAN addressing', style: Theme.of(context).textTheme.titleMedium),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: TextField(
-                              controller: _gatewayCtrl,
-                              enabled: !_loading,
-                              decoration: const InputDecoration(
-                                labelText: 'Gateway IP',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            flex: 1,
-                            child: TextField(
-                              controller: _cidrCtrl,
-                              enabled: !_loading,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'CIDR',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _poolStartCtrl,
-                              enabled: !_loading,
-                              decoration: const InputDecoration(
-                                labelText: 'Pool start',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: TextField(
-                              controller: _poolEndCtrl,
-                              enabled: !_loading,
-                              decoration: const InputDecoration(
-                                labelText: 'Pool end',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      FilledButton.icon(
-                        onPressed: _loading ? null : _applyProvisioning,
-                        icon: _loading
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.play_arrow),
-                        label: const Text('Apply Hotspot setup'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              if (_status != null) ...[
-                const SizedBox(height: 12),
-                Text(_status!),
-              ],
-            ],
+        actions: [
+          IconButton(
+            tooltip: 'Refresh interfaces',
+            onPressed: _loading ? null : _refreshInterfaces,
+            icon: const Icon(Icons.refresh),
           ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Interfaces', style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      value: _wanInterface,
+                      decoration: const InputDecoration(
+                        labelText: 'WAN interface (for NAT)',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: [
+                        const DropdownMenuItem(value: null, child: Text('None')),
+                        ..._interfaces
+                            .map((i) => i['name'])
+                            .whereType<String>()
+                            .map(
+                              (name) => DropdownMenuItem(
+                                value: name,
+                                child: Text(name),
+                              ),
+                            ),
+                      ],
+                      onChanged: _loading ? null : (v) => setState(() => _wanInterface = v),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'LAN interfaces (Hotspot bridge members)',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    ..._interfaces
+                        .map((i) => i['name'])
+                        .whereType<String>()
+                        .map((name) {
+                      final selected = _lanInterfaces.contains(name);
+                      return CheckboxListTile(
+                        value: selected,
+                        onChanged: _loading
+                            ? null
+                            : (v) {
+                                setState(() {
+                                  if (v == true) {
+                                    _lanInterfaces.add(name);
+                                  } else {
+                                    _lanInterfaces.remove(name);
+                                  }
+                                });
+                              },
+                        title: Text(name),
+                        dense: true,
+                        controlAffinity: ListTileControlAffinity.leading,
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('LAN addressing', style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: TextField(
+                            controller: _gatewayCtrl,
+                            enabled: !_loading,
+                            decoration: const InputDecoration(
+                              labelText: 'Gateway IP',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          flex: 1,
+                          child: TextField(
+                            controller: _cidrCtrl,
+                            enabled: !_loading,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'CIDR',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _poolStartCtrl,
+                            enabled: !_loading,
+                            decoration: const InputDecoration(
+                              labelText: 'Pool start',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: _poolEndCtrl,
+                            enabled: !_loading,
+                            decoration: const InputDecoration(
+                              labelText: 'Pool end',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton.icon(
+                      onPressed: _loading ? null : _applyProvisioning,
+                      icon: _loading
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.play_arrow),
+                      label: const Text('Apply Hotspot setup'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (_status != null) ...[
+              const SizedBox(height: 12),
+              Text(_status!),
+            ],
+          ],
         ),
       ),
     );

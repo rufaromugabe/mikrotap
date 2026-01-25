@@ -19,12 +19,12 @@ class RoutersScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Routers'),
         actions: [
-          FilledButton.icon(
+          IconButton(
+            tooltip: 'Discover (MNDP)',
             onPressed: () => context.go(RoutersDiscoveryScreen.routePath),
             icon: const Icon(Icons.radar),
-            label: const Text('Discover'),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
         ],
       ),
       body: SafeArea(

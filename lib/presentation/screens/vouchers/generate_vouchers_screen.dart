@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../data/models/voucher.dart';
 import '../../../data/services/routeros_api_client.dart';
+import '../../providers/auth_providers.dart';
 import '../../providers/voucher_providers.dart';
 
 class GenerateVouchersArgs {
@@ -27,7 +28,7 @@ class GenerateVouchersArgs {
 class GenerateVouchersScreen extends ConsumerStatefulWidget {
   const GenerateVouchersScreen({super.key, required this.args});
 
-  static const routePath = '/vouchers/generate';
+  static const routePath = '/workspace/vouchers/generate';
 
   final GenerateVouchersArgs args;
 
@@ -41,6 +42,9 @@ class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen>
   final _userLenCtrl = TextEditingController(text: '6');
   final _passLenCtrl = TextEditingController(text: '6');
   final _uptimeCtrl = TextEditingController(text: '1h');
+  final _priceCtrl = TextEditingController(text: '0');
+  final _quotaCtrl = TextEditingController(); // numeric
+  String _quotaUnit = 'GB';
 
   bool _running = false;
   String? _status;
@@ -61,6 +65,8 @@ class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen>
     _userLenCtrl.dispose();
     _passLenCtrl.dispose();
     _uptimeCtrl.dispose();
+    _priceCtrl.dispose();
+    _quotaCtrl.dispose();
     super.dispose();
   }
 
@@ -86,6 +92,7 @@ class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen>
   }
 
   Future<void> _generate() async {
+    final seller = ref.read(authStateProvider).maybeWhen(data: (u) => u, orElse: () => null);
     final count = int.tryParse(_countCtrl.text) ?? 0;
     final userLen = int.tryParse(_userLenCtrl.text) ?? 0;
     final passLen = int.tryParse(_passLenCtrl.text) ?? 0;
@@ -93,6 +100,11 @@ class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen>
     final limitUptime = _uptimeCtrl.text;
     final parsedUptime = _parseRouterOsDuration(limitUptime);
     final expiresAt = parsedUptime == null ? null : DateTime.now().add(parsedUptime);
+    final price = num.tryParse(_priceCtrl.text.trim());
+    final quota = num.tryParse(_quotaCtrl.text.trim());
+    final quotaBytes = (quota != null && quota > 0)
+        ? (_quotaUnit == 'MB' ? (quota * 1024 * 1024) : (quota * 1024 * 1024 * 1024)).round()
+        : null;
 
     if (count <= 0 || count > 500) {
       setState(() => _status = 'Count must be 1..500');
@@ -123,20 +135,34 @@ class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen>
     try {
       await client.login(username: widget.args.username, password: widget.args.password);
 
+      final soldAt = DateTime.now();
       for (var i = 0; i < count; i++) {
         final user = '${prefix.isEmpty ? '' : '${prefix.toUpperCase()}-'}${token(userLen)}';
         final pass = token(passLen);
+
+        String fmt(DateTime d) {
+          String two(int n) => n.toString().padLeft(2, '0');
+          return '${d.year}${two(d.month)}${two(d.day)}${two(d.hour)}${two(d.minute)}${two(d.second)}';
+        }
+
+        final comment = expiresAt == null ? 'mikrotap' : 'mikrotap exp=${fmt(expiresAt)}';
 
         // Push to router as Hotspot user
         final attrs = <String, String>{
           'name': user,
           'password': pass,
+          // Mark vouchers managed by MikroTap (used by cleanup scheduler).
+          'comment': comment,
         };
         if ((_selectedProfile ?? '').isNotEmpty) {
           attrs['profile'] = _selectedProfile!;
         }
         if (limitUptime.trim().isNotEmpty) {
           attrs['limit-uptime'] = limitUptime.trim();
+        }
+        if (quotaBytes != null) {
+          // Data quota is a per-user limit in RouterOS Hotspot.
+          attrs['limit-bytes-total'] = '$quotaBytes';
         }
         await client.add('/ip/hotspot/user/add', attrs);
 
@@ -147,7 +173,11 @@ class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen>
           username: user,
           password: pass,
           profile: _selectedProfile,
+          price: (price == null || price == 0) ? null : price,
           expiresAt: expiresAt,
+          soldAt: soldAt,
+          soldByUserId: seller?.uid,
+          soldByName: seller?.displayName ?? seller?.email,
           createdAt: DateTime.now(),
         );
         await ref.read(voucherRepositoryProvider).upsertVoucher(v);
@@ -199,6 +229,14 @@ class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Generate vouchers'),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh profiles',
+            onPressed: _running ? null : _loadProfiles,
+            icon: const Icon(Icons.refresh),
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: SafeArea(
         child: ListView(
@@ -270,6 +308,48 @@ class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen>
                 labelText: 'Uptime limit (e.g. 1h, 30m, 1d)',
                 border: OutlineInputBorder(),
               ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _priceCtrl,
+              enabled: !_running,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Price per voucher (optional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _quotaCtrl,
+                    enabled: !_running,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Data quota (optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                SizedBox(
+                  width: 90,
+                  child: DropdownButtonFormField<String>(
+                    value: _quotaUnit,
+                    decoration: const InputDecoration(
+                      labelText: 'Unit',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'GB', child: Text('GB')),
+                      DropdownMenuItem(value: 'MB', child: Text('MB')),
+                    ],
+                    onChanged: _running ? null : (v) => setState(() => _quotaUnit = v ?? 'GB'),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
             FilledButton.icon(
