@@ -1,23 +1,101 @@
 import '../../data/services/routeros_api_client.dart';
 
+class PortalThemePreset {
+  const PortalThemePreset({
+    required this.id,
+    required this.name,
+    required this.primaryHex,
+    required this.bgCss,
+    required this.cardCss,
+    required this.textCss,
+    required this.mutedCss,
+  });
+
+  final String id;
+  final String name;
+  final String primaryHex;
+  final String bgCss;
+  final String cardCss;
+  final String textCss;
+  final String mutedCss;
+}
+
 class PortalBranding {
   const PortalBranding({
     required this.title,
     required this.primaryHex,
     required this.supportText,
+    this.themeId = 'midnight',
+    this.logoDataUri,
+    this.backgroundDataUri,
   });
 
   final String title;
   final String primaryHex; // e.g. #2563EB
   final String supportText;
+  final String themeId;
+  final String? logoDataUri; // e.g. data:image/png;base64,...
+  final String? backgroundDataUri; // e.g. data:image/jpeg;base64,...
 }
 
 class HotspotPortalService {
+  static const presets = <PortalThemePreset>[
+    PortalThemePreset(
+      id: 'midnight',
+      name: 'Midnight',
+      primaryHex: '#2563EB',
+      bgCss:
+          'radial-gradient(1200px 800px at 20% 0%, rgba(37,99,235,.25), transparent), radial-gradient(900px 700px at 90% 10%, rgba(59,130,246,.18), transparent), #0b1220',
+      cardCss: 'rgba(15,23,42,.92)',
+      textCss: '#e2e8f0',
+      mutedCss: '#94a3b8',
+    ),
+    PortalThemePreset(
+      id: 'emerald',
+      name: 'Emerald',
+      primaryHex: '#10B981',
+      bgCss:
+          'radial-gradient(1200px 800px at 20% 0%, rgba(16,185,129,.20), transparent), radial-gradient(900px 700px at 90% 10%, rgba(34,197,94,.16), transparent), #061318',
+      cardCss: 'rgba(6,24,30,.92)',
+      textCss: '#e2e8f0',
+      mutedCss: '#9ca3af',
+    ),
+    PortalThemePreset(
+      id: 'sunrise',
+      name: 'Sunrise',
+      primaryHex: '#F97316',
+      bgCss:
+          'radial-gradient(1200px 800px at 20% 0%, rgba(249,115,22,.22), transparent), radial-gradient(900px 700px at 90% 10%, rgba(236,72,153,.14), transparent), #12080b',
+      cardCss: 'rgba(24,10,12,.92)',
+      textCss: '#f8fafc',
+      mutedCss: '#cbd5e1',
+    ),
+    PortalThemePreset(
+      id: 'light',
+      name: 'Light',
+      primaryHex: '#2563EB',
+      bgCss:
+          'radial-gradient(1000px 700px at 10% 0%, rgba(37,99,235,.15), transparent), radial-gradient(800px 600px at 90% 10%, rgba(59,130,246,.10), transparent), #f8fafc',
+      cardCss: 'rgba(255,255,255,.92)',
+      textCss: '#0f172a',
+      mutedCss: '#475569',
+    ),
+  ];
+
+  static PortalThemePreset presetById(String? id) {
+    return presets.firstWhere(
+      (p) => p.id == id,
+      orElse: () => presets.first,
+    );
+  }
+
   static PortalBranding defaultBranding({required String routerName}) {
+    final p = presetById('midnight');
     return PortalBranding(
       title: routerName.isEmpty ? 'MikroTap Wi‑Fi' : routerName,
-      primaryHex: '#2563EB',
+      primaryHex: p.primaryHex,
       supportText: 'Need help? Contact the attendant.',
+      themeId: p.id,
     );
   }
 
@@ -54,6 +132,13 @@ class HotspotPortalService {
     }
   }
 
+  /// Builds the same `login.html` content we upload to RouterOS, but with
+  /// MikroTik variables replaced by placeholders so it can be rendered in-app
+  /// (WebView preview).
+  static String buildLoginHtmlPreview({required PortalBranding branding}) {
+    return _loginHtml(branding, previewMode: true);
+  }
+
   static Future<void> _upsertFile(
     RouterOsApiClient c, {
     required String name,
@@ -68,10 +153,22 @@ class HotspotPortalService {
     await c.setById('/file/set', id: id, attrs: {'contents': contents});
   }
 
-  static String _loginHtml(PortalBranding b) {
+  static String _loginHtml(PortalBranding b, {bool previewMode = false}) {
     final title = _escapeHtml(b.title);
     final support = _escapeHtml(b.supportText);
-    final primary = b.primaryHex.trim().isEmpty ? '#2563EB' : b.primaryHex.trim();
+    final preset = presetById(b.themeId);
+    final primary = b.primaryHex.trim().isEmpty ? preset.primaryHex : b.primaryHex.trim();
+    final bg = (b.backgroundDataUri != null && b.backgroundDataUri!.trim().isNotEmpty)
+        ? 'linear-gradient(rgba(2,6,23,.68), rgba(2,6,23,.68)), url(${b.backgroundDataUri})'
+        : preset.bgCss;
+    final card = preset.cardCss;
+    final text = preset.textCss;
+    final muted = preset.mutedCss;
+    final logo = (b.logoDataUri != null && b.logoDataUri!.trim().isNotEmpty) ? b.logoDataUri!.trim() : null;
+
+    final formAction = previewMode ? '#' : r'\$(link-login-only)';
+    final usernameValue = previewMode ? 'demo' : r'\$(username)';
+    final dstValue = previewMode ? '' : r'\$(link-orig)';
 
     return '''
 <!doctype html>
@@ -81,12 +178,13 @@ class HotspotPortalService {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>$title</title>
   <style>
-    :root { --p: $primary; --bg: #0b1220; --card: #0f172a; --muted: #94a3b8; --text: #e2e8f0; }
-    body { margin: 0; font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial; background: radial-gradient(1200px 800px at 20% 0%, rgba(37,99,235,.25), transparent), radial-gradient(900px 700px at 90% 10%, rgba(59,130,246,.18), transparent), var(--bg); color: var(--text); }
+    :root { --p: $primary; --card: $card; --muted: $muted; --text: $text; }
+    body { margin: 0; font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial; background: $bg; background-size: cover; background-position: center; color: var(--text); }
     .wrap { max-width: 420px; margin: 0 auto; padding: 28px 16px; min-height: 100vh; display: grid; place-items: center; }
-    .card { width: 100%; background: rgba(15,23,42,.92); border: 1px solid rgba(148,163,184,.15); border-radius: 18px; padding: 18px; box-shadow: 0 12px 40px rgba(0,0,0,.45); }
+    .card { width: 100%; background: var(--card); border: 1px solid rgba(148,163,184,.15); border-radius: 18px; padding: 18px; box-shadow: 0 12px 40px rgba(0,0,0,.45); }
     .brand { display:flex; align-items:center; gap:10px; margin-bottom: 12px; }
     .dot { width: 10px; height: 10px; border-radius: 999px; background: var(--p); box-shadow: 0 0 0 6px rgba(37,99,235,.18); }
+    .logo { width: 40px; height: 40px; border-radius: 12px; object-fit: cover; border: 1px solid rgba(148,163,184,.18); background: rgba(2,6,23,.35); }
     h1 { font-size: 18px; margin: 0; }
     .sub { margin: 6px 0 14px; color: var(--muted); font-size: 13px; }
     label { display:block; font-size: 12px; color: var(--muted); margin: 10px 0 6px; }
@@ -100,23 +198,26 @@ class HotspotPortalService {
 <body>
   <div class="wrap">
     <div class="card">
-      <div class="brand"><div class="dot"></div><h1>$title</h1></div>
+      <div class="brand">
+        ${logo == null ? '<div class="dot"></div>' : '<img class="logo" src="$logo" alt="logo" />'}
+        <h1>$title</h1>
+      </div>
       <div class="sub">Enter your voucher username and password.</div>
 
       <!-- MikroTik variables: \$(link-login-only) \$(chap-id) \$(chap-challenge) \$(error) -->
-      <form name="login" action="\$(link-login-only)" method="post">
+      <form name="login" action="$formAction" method="post">
         <label>Username</label>
-        <input name="username" value="\$(username)" />
+        <input name="username" value="$usernameValue" />
         <label>Password</label>
         <input name="password" type="password" />
-        <input type="hidden" name="dst" value="\$(link-orig)" />
+        <input type="hidden" name="dst" value="$dstValue" />
         <input type="hidden" name="popup" value="true" />
         <button class="btn" type="submit">Connect</button>
       </form>
 
-      \$(if error)
-        <div class="err">\$(error)</div>
-      \$(endif)
+      ${previewMode ? '' : r'\$(if error)'}
+      ${previewMode ? '' : r'  <div class="err">\$(error)</div>'}
+      ${previewMode ? '' : r'\$(endif)'}
 
       <div class="foot">$support</div>
     </div>
@@ -128,7 +229,15 @@ class HotspotPortalService {
 
   static String _logoutHtml(PortalBranding b) {
     final title = _escapeHtml(b.title);
-    final primary = b.primaryHex.trim().isEmpty ? '#2563EB' : b.primaryHex.trim();
+    final preset = presetById(b.themeId);
+    final primary = b.primaryHex.trim().isEmpty ? preset.primaryHex : b.primaryHex.trim();
+    final bg = (b.backgroundDataUri != null && b.backgroundDataUri!.trim().isNotEmpty)
+        ? 'linear-gradient(rgba(2,6,23,.68), rgba(2,6,23,.68)), url(${b.backgroundDataUri})'
+        : preset.bgCss;
+    final card = preset.cardCss;
+    final text = preset.textCss;
+    final muted = preset.mutedCss;
+    final logo = (b.logoDataUri != null && b.logoDataUri!.trim().isNotEmpty) ? b.logoDataUri!.trim() : null;
     return '''
 <!doctype html>
 <html>
@@ -137,16 +246,23 @@ class HotspotPortalService {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>$title</title>
   <style>
-    body { margin:0; font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial; background:#0b1220; color:#e2e8f0; }
+    body { margin:0; font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial; background:$bg; background-size: cover; background-position: center; color:$text; }
     .wrap{ max-width:420px; margin:0 auto; padding:28px 16px; min-height:100vh; display:grid; place-items:center; }
-    .card{ width:100%; background:#0f172a; border:1px solid rgba(148,163,184,.15); border-radius:18px; padding:18px; }
+    .card{ width:100%; background:$card; border:1px solid rgba(148,163,184,.15); border-radius:18px; padding:18px; }
     .btn{ width:100%; padding:12px 14px; border:0; border-radius:12px; background:$primary; color:white; font-weight:700; }
-    .muted{ color:#94a3b8; font-size:13px; }
+    .muted{ color:$muted; font-size:13px; }
+    .brand{ display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+    .dot{ width:10px; height:10px; border-radius:999px; background:$primary; box-shadow:0 0 0 6px rgba(37,99,235,.18); }
+    .logo { width: 40px; height: 40px; border-radius: 12px; object-fit: cover; border: 1px solid rgba(148,163,184,.18); background: rgba(2,6,23,.35); }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="card">
+      <div class="brand">
+        ${logo == null ? '<div class="dot"></div>' : '<img class="logo" src="$logo" alt="logo" />'}
+        <div style="font-weight:800;">$title</div>
+      </div>
       <h2 style="margin:0 0 8px;">Disconnected</h2>
       <div class="muted">You can close this page.</div>
       <div style="height:12px;"></div>
@@ -162,6 +278,14 @@ class HotspotPortalService {
 
   static String _statusHtml(PortalBranding b) {
     final title = _escapeHtml(b.title);
+    final preset = presetById(b.themeId);
+    final bg = (b.backgroundDataUri != null && b.backgroundDataUri!.trim().isNotEmpty)
+        ? 'linear-gradient(rgba(2,6,23,.68), rgba(2,6,23,.68)), url(${b.backgroundDataUri})'
+        : preset.bgCss;
+    final card = preset.cardCss;
+    final text = preset.textCss;
+    final muted = preset.mutedCss;
+    final primary = b.primaryHex.trim().isEmpty ? preset.primaryHex : b.primaryHex.trim();
     return '''
 <!doctype html>
 <html>
@@ -170,13 +294,14 @@ class HotspotPortalService {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>$title</title>
   <style>
-    body { margin:0; font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial; background:#0b1220; color:#e2e8f0; }
+    body { margin:0; font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial; background:$bg; background-size: cover; background-position: center; color:$text; }
     .wrap{ max-width:520px; margin:0 auto; padding:28px 16px; }
-    .card{ background:#0f172a; border:1px solid rgba(148,163,184,.15); border-radius:18px; padding:18px; }
-    .muted{ color:#94a3b8; font-size:13px; }
+    .card{ background:$card; border:1px solid rgba(148,163,184,.15); border-radius:18px; padding:18px; }
+    .muted{ color:$muted; font-size:13px; }
     table{ width:100%; border-collapse:collapse; margin-top:12px; }
     td{ padding:8px 0; border-bottom:1px solid rgba(148,163,184,.12); }
-    td:first-child{ color:#94a3b8; width:38%; }
+    td:first-child{ color:$muted; width:38%; }
+    a{ color:$primary; }
   </style>
 </head>
 <body>
