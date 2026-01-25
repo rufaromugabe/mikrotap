@@ -97,8 +97,12 @@ class _HotspotSetupWizardScreenState extends State<HotspotSetupWizardScreen> {
       // Keep only physical-ish interfaces (ether, wlan). Still show everything, but default to these.
       setState(() {
         _interfaces = rows;
-        if (_wanInterface == null && rows.isNotEmpty) {
-          _wanInterface = rows.first['name'];
+        final names = rows.map((r) => r['name']).whereType<String>().toList();
+        if (_wanInterface != null && _wanInterface!.isNotEmpty && !names.contains(_wanInterface)) {
+          _wanInterface = null; // old value no longer exists
+        }
+        if ((_wanInterface == null || _wanInterface!.isEmpty) && names.isNotEmpty) {
+          _wanInterface = names.first;
         }
       });
     });
@@ -187,8 +191,12 @@ class _HotspotSetupWizardScreenState extends State<HotspotSetupWizardScreen> {
                   children: [
                     Text('Interfaces', style: Theme.of(context).textTheme.titleMedium),
                     const SizedBox(height: 10),
-                    DropdownButtonFormField<String>(
-                      value: _wanInterface,
+                    DropdownButtonFormField<String?>(
+                      value: (_wanInterface != null &&
+                              _wanInterface!.isNotEmpty &&
+                              _interfaces.any((i) => (i['name'] ?? '') == _wanInterface))
+                          ? _wanInterface
+                          : null,
                       decoration: const InputDecoration(
                         labelText: 'WAN interface (for NAT)',
                         border: OutlineInputBorder(),

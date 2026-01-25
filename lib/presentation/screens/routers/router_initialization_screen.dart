@@ -436,8 +436,12 @@ class _RouterInitializationScreenState extends State<RouterInitializationScreen>
               content: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  DropdownButtonFormField<String>(
-                    value: _wanInterface,
+                  DropdownButtonFormField<String?>(
+                    value: (_wanInterface != null &&
+                            _wanInterface!.isNotEmpty &&
+                            _interfaces.any((i) => (i['name'] ?? '') == _wanInterface))
+                        ? _wanInterface
+                        : null,
                     decoration: const InputDecoration(
                       labelText: 'WAN interface (for NAT)',
                       border: OutlineInputBorder(),
