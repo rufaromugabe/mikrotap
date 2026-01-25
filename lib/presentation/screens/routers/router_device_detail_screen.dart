@@ -5,13 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mikrotik_mndp/message.dart';
-import 'package:uuid/uuid.dart';
-
 import '../../../data/services/routeros_api_client.dart';
 import '../../providers/router_providers.dart';
 import '../../../data/models/router_entry.dart';
+import '../../providers/active_router_provider.dart';
 import 'routers_discovery_screen.dart';
-import 'routers_screen.dart';
+import 'router_initialization_screen.dart';
 
 class RouterDeviceDetailScreen extends ConsumerStatefulWidget {
   const RouterDeviceDetailScreen({super.key, required this.message});
@@ -32,7 +31,6 @@ class _RouterDeviceDetailScreenState extends ConsumerState<RouterDeviceDetailScr
 
   bool _connecting = false;
   String? _apiStatus;
-  Map<String, String>? _systemResource;
   bool _saving = false;
 
   @override
@@ -53,72 +51,45 @@ class _RouterDeviceDetailScreenState extends ConsumerState<RouterDeviceDetailScr
     super.dispose();
   }
 
-  Future<void> _connectAndFetch() async {
-    final host = _hostCtrl.text;
-    if (host.isEmpty) {
-      setState(() => _apiStatus = 'No IP address found in MNDP message.');
-      return;
+  String _stableRouterId({required String host, required String? mac}) {
+    if (mac != null && mac.trim().isNotEmpty) {
+      return mac.trim().replaceAll(':', '-').toLowerCase();
     }
+    return host.trim();
+  }
 
+  Future<void> _connectSaveAndInitialize() async {
+    final m = widget.message;
+    final host = _hostCtrl.text;
     final username = _usernameCtrl.text.trim();
     final password = _passwordCtrl.text;
-    if (username.isEmpty) {
-      setState(() => _apiStatus = 'Username required.');
+    if (host.isEmpty || username.isEmpty) {
+      setState(() => _apiStatus = 'Host + username required.');
       return;
     }
 
     setState(() {
       _connecting = true;
+      _saving = true;
       _apiStatus = null;
-      _systemResource = null;
     });
 
-    final client = RouterOsApiClient(host: host, port: 8728);
+    final client = RouterOsApiClient(host: host, port: 8728, timeout: const Duration(seconds: 8));
     try {
       await client.login(username: username, password: password);
       final resp = await client.command(['/system/resource/print']);
-
-      final re = resp.where((s) => s.type == '!re').toList();
-      if (re.isEmpty) {
+      final ok = resp.any((s) => s.type == '!re');
+      if (!ok) {
         setState(() => _apiStatus = 'Connected, but no data returned.');
         return;
       }
 
-      setState(() {
-        _systemResource = re.first.attributes;
-        _apiStatus = 'Connected to $host (API 8728).';
-      });
-    } on RouterOsApiException catch (e) {
-      setState(() => _apiStatus = e.message);
-    } on SocketException catch (e) {
-      setState(() => _apiStatus = 'Network error: ${e.message}');
-    } on TimeoutException {
-      setState(() => _apiStatus = 'Timeout connecting to $host:8728');
-    } catch (e) {
-      setState(() => _apiStatus = 'Error: $e');
-    } finally {
-      await client.close();
-      if (mounted) setState(() => _connecting = false);
-    }
-  }
-
-  Future<void> _saveRouter() async {
-    final m = widget.message;
-    final host = _hostCtrl.text;
-    if (host.isEmpty) {
-      setState(() => _apiStatus = 'No IP address found to save.');
-      return;
-    }
-
-    setState(() => _saving = true);
-    try {
       final now = DateTime.now();
       final mac = m.macAddress;
-      final id = (mac != null && mac.trim().isNotEmpty)
-          ? mac.trim().replaceAll(':', '-').toLowerCase()
-          : const Uuid().v4();
-
+      final id = _stableRouterId(host: host, mac: mac);
       final name = m.identity ?? m.boardName ?? (mac ?? 'MikroTik');
+
+      // Upsert router entry (works for both new and already-saved routers).
       final entry = RouterEntry(
         id: id,
         name: name,
@@ -132,17 +103,37 @@ class _RouterDeviceDetailScreenState extends ConsumerState<RouterDeviceDetailScr
         updatedAt: now,
         lastSeenAt: now,
       );
-
       await ref.read(routerRepositoryProvider).upsertRouter(entry);
+
+      // Set active and go directly to initialization.
+      await ref.read(activeRouterProvider.notifier).set(
+            ActiveRouterSession(
+              routerId: entry.id,
+              routerName: entry.name,
+              host: host,
+              username: username,
+              password: password,
+            ),
+          );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Router saved')),
+      context.go(
+        RouterInitializationScreen.routePath,
+        extra: RouterInitializationArgs(
+          host: host,
+          username: username,
+          password: password,
+        ),
       );
-      context.go(RoutersScreen.routePath);
     } catch (e) {
-      setState(() => _apiStatus = 'Save failed: $e');
+      setState(() => _apiStatus = 'Connect failed: $e');
     } finally {
-      if (mounted) setState(() => _saving = false);
+      await client.close();
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _connecting = false;
+        });
+      }
     }
   }
 
@@ -193,19 +184,13 @@ class _RouterDeviceDetailScreenState extends ConsumerState<RouterDeviceDetailScr
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      m.productInfo?.name ?? (m.boardName ?? 'MikroTik device'),
+                      m.identity ?? m.boardName ?? 'MikroTik',
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                     const SizedBox(height: 8),
-                    _kv('Identity', m.identity),
-                    _kv('Board', m.boardName),
-                    _kv('Platform', m.platform),
-                    _kv('Version', m.version),
-                    _kv('MAC', m.macAddress),
                     _kv('IPv4', ipv4),
                     _kv('IPv6', ipv6),
-                    _kv('Interface', m.interfaceName),
-                    _kv('Software ID', m.softwareId),
+                    _kv('MAC', m.macAddress),
                   ],
                 ),
               ),
@@ -282,7 +267,7 @@ class _RouterDeviceDetailScreenState extends ConsumerState<RouterDeviceDetailScr
                       ),
                       obscureText: true,
                       enabled: !_connecting && !_saving,
-                      onSubmitted: (_) => _connecting ? null : _connectAndFetch(),
+                      onSubmitted: (_) => (_connecting || _saving) ? null : _connectSaveAndInitialize(),
                     ),
                     const SizedBox(height: 10),
                     Wrap(
@@ -290,7 +275,7 @@ class _RouterDeviceDetailScreenState extends ConsumerState<RouterDeviceDetailScr
                       runSpacing: 10,
                       children: [
                         FilledButton.icon(
-                          onPressed: (_connecting || _saving) ? null : _connectAndFetch,
+                          onPressed: (_connecting || _saving) ? null : _connectSaveAndInitialize,
                           icon: _connecting
                               ? const SizedBox(
                                   width: 18,
@@ -298,37 +283,13 @@ class _RouterDeviceDetailScreenState extends ConsumerState<RouterDeviceDetailScr
                                   child: CircularProgressIndicator(strokeWidth: 2),
                                 )
                               : const Icon(Icons.link),
-                          label: const Text('Connect (API 8728)'),
-                        ),
-                        FilledButton.icon(
-                          onPressed: (_saving || _connecting) ? null : _saveRouter,
-                          icon: _saving
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.save_outlined),
-                          label: const Text('Save router'),
+                          label: const Text('Connect & initialize'),
                         ),
                       ],
                     ),
                     if (_apiStatus != null) ...[
                       const SizedBox(height: 12),
                       Text(_apiStatus!),
-                    ],
-                    if (_systemResource != null) ...[
-                      const SizedBox(height: 12),
-                      const Divider(),
-                      const SizedBox(height: 6),
-                      Text(
-                        'System resource',
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                      const SizedBox(height: 6),
-                      ..._systemResource!.entries.map(
-                        (e) => _kv(e.key, e.value),
-                      ),
                     ],
                     const SizedBox(height: 12),
                     Text(

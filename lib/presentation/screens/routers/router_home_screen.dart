@@ -20,18 +20,18 @@ class RouterHomeScreen extends ConsumerWidget {
 
     if (session == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Router')),
+        appBar: AppBar(title: const Text('Workspace')),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('No active router. Select a router and connect first.'),
+                const Text('No active router. Select a router to start.'),
                 const SizedBox(height: 12),
                 FilledButton(
                   onPressed: () => context.go(RoutersScreen.routePath),
-                  child: const Text('Go to Routers'),
+                  child: const Text('Switch router'),
                 ),
               ],
             ),

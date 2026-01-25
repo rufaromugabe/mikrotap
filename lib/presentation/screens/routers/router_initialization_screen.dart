@@ -48,6 +48,13 @@ class _RouterInitializationScreenState extends State<RouterInitializationScreen>
   final List<String> _log = [];
 
   @override
+  void initState() {
+    super.initState();
+    // Auto-refresh status on load (no manual refresh button).
+    unawaited(_refresh());
+  }
+
+  @override
   void dispose() {
     _mkUserCtrl.dispose();
     _mkPassCtrl.dispose();
@@ -118,33 +125,49 @@ class _RouterInitializationScreenState extends State<RouterInitializationScreen>
       return;
     }
 
-    // 1) Ensure group exists
-    final gAdd = await c.command([
-      '/user/group/add',
-      '=name=mikrotap',
-      '=policy=read,write,api,policy,test',
-    ]);
-    final gTrap = gAdd.where((s) => s.type == '!trap').toList();
-    if (gTrap.isNotEmpty) {
-      final msg = (gTrap.first.attributes['message'] ?? '').toLowerCase();
-      if (!msg.contains('already')) {
-        throw RouterOsApiException(gTrap.first.attributes['message'] ?? 'Failed to create group');
+    // 1) Ensure group exists (idempotent)
+    final groupId = await c.findId('/user/group/print', key: 'name', value: 'mikrotap');
+    if (groupId == null) {
+      final gAdd = await c.command([
+        '/user/group/add',
+        '=name=mikrotap',
+        '=policy=read,write,api,policy,test',
+      ]);
+      final gTrap = gAdd.where((s) => s.type == '!trap').toList();
+      if (gTrap.isNotEmpty) {
+        final msg = (gTrap.first.attributes['message'] ?? '').toLowerCase();
+        if (!msg.contains('already')) {
+          throw RouterOsApiException(gTrap.first.attributes['message'] ?? 'Failed to create group');
+        }
       }
+    } else {
+      // Keep policy in sync (safe update).
+      await c.setById(
+        '/user/group/set',
+        id: groupId,
+        attrs: {'policy': 'read,write,api,policy,test'},
+      );
     }
 
-    // 2) Ensure user exists
-    final uAdd = await c.command([
-      '/user/add',
-      '=name=$name',
-      '=group=mikrotap',
-      '=password=$pass',
-    ]);
-    final uTrap = uAdd.where((s) => s.type == '!trap').toList();
-    if (uTrap.isNotEmpty) {
-      final msg = (uTrap.first.attributes['message'] ?? '').toLowerCase();
-      if (!msg.contains('already')) {
-        throw RouterOsApiException(uTrap.first.attributes['message'] ?? 'Failed to create user');
+    // 2) Ensure user exists (idempotent; do not reset password if already exists)
+    final userId = await c.findId('/user/print', key: 'name', value: name);
+    if (userId == null) {
+      final uAdd = await c.command([
+        '/user/add',
+        '=name=$name',
+        '=group=mikrotap',
+        '=password=$pass',
+      ]);
+      final uTrap = uAdd.where((s) => s.type == '!trap').toList();
+      if (uTrap.isNotEmpty) {
+        final msg = (uTrap.first.attributes['message'] ?? '').toLowerCase();
+        if (!msg.contains('already')) {
+          throw RouterOsApiException(uTrap.first.attributes['message'] ?? 'Failed to create user');
+        }
       }
+    } else {
+      // Ensure correct group, but don't overwrite password silently.
+      await c.setById('/user/set', id: userId, attrs: {'group': 'mikrotap'});
     }
   }
 
@@ -217,6 +240,9 @@ class _RouterInitializationScreenState extends State<RouterInitializationScreen>
         _services = svcRows;
       });
       _logLine('Done.');
+
+      if (!mounted) return;
+      context.go(RouterHomeScreen.routePath);
     });
   }
 
@@ -239,14 +265,6 @@ class _RouterInitializationScreenState extends State<RouterInitializationScreen>
             }
           },
         ),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: _loading ? null : _refresh,
-            icon: const Icon(Icons.refresh),
-          ),
-          const SizedBox(width: 8),
-        ],
       ),
       body: SafeArea(
         child: Stepper(
@@ -320,12 +338,6 @@ class _RouterInitializationScreenState extends State<RouterInitializationScreen>
                     'Important: RouterOS API must be enabled once in WinBox/WebFig (IP → Services → api). '
                     'This wizard can’t enable API if it’s currently disabled.',
                     style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 10),
-                  FilledButton.icon(
-                    onPressed: _loading ? null : _refresh,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Refresh status'),
                   ),
                   const SizedBox(height: 10),
                   if (_services.isNotEmpty)

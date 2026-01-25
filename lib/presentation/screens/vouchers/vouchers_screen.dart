@@ -71,17 +71,6 @@ class _VouchersBodyState extends ConsumerState<_VouchersBody> {
           },
         ),
         actions: [
-          SegmentedButton<_VoucherUsageFilter>(
-            selected: {_filter},
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment(value: _VoucherUsageFilter.all, label: Text('All')),
-              ButtonSegment(value: _VoucherUsageFilter.inUse, label: Text('In use')),
-              ButtonSegment(value: _VoucherUsageFilter.neverUsed, label: Text('Never used')),
-            ],
-            onSelectionChanged: (s) => setState(() => _filter = s.first),
-          ),
-          const SizedBox(width: 8),
           IconButton(
             tooltip: 'Sync usage',
             onPressed: () async {
@@ -137,7 +126,14 @@ class _VouchersBodyState extends ConsumerState<_VouchersBody> {
             onPressed: () {
               context.push(
                 PrintVouchersScreen.routePath,
-                extra: PrintVouchersArgs(routerId: routerId),
+                extra: PrintVouchersArgs(
+                  routerId: routerId,
+                  filter: switch (_filter) {
+                    _VoucherUsageFilter.all => VoucherPrintFilter.all,
+                    _VoucherUsageFilter.inUse => VoucherPrintFilter.inUse,
+                    _VoucherUsageFilter.neverUsed => VoucherPrintFilter.neverUsed,
+                  },
+                ),
               );
             },
             icon: const Icon(Icons.print),
@@ -147,73 +143,96 @@ class _VouchersBodyState extends ConsumerState<_VouchersBody> {
         ],
       ),
       body: SafeArea(
-        child: vouchers.when(
-          data: (items) {
-            if (items.isEmpty) {
-              return const Center(child: Text('No vouchers yet. Tap Generate.'));
-            }
-
-            final filtered = items.where((v) {
-              final isUsed = (v.firstUsedAt != null) || v.status == VoucherStatus.used;
-              switch (_filter) {
-                case _VoucherUsageFilter.all:
-                  return true;
-                case _VoucherUsageFilter.inUse:
-                  return isUsed;
-                case _VoucherUsageFilter.neverUsed:
-                  return !isUsed;
-              }
-            }).toList();
-
-            if (filtered.isEmpty) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
-                    _filter == _VoucherUsageFilter.inUse
-                        ? 'No vouchers in use yet.'
-                        : 'No never-used vouchers.',
-                  ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: SegmentedButton<_VoucherUsageFilter>(
+                  selected: {_filter},
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(value: _VoucherUsageFilter.all, label: Text('All')),
+                    ButtonSegment(value: _VoucherUsageFilter.inUse, label: Text('In use')),
+                    ButtonSegment(value: _VoucherUsageFilter.neverUsed, label: Text('Never used')),
+                  ],
+                  onSelectionChanged: (s) => setState(() => _filter = s.first),
                 ),
-              );
-            }
+              ),
+            ),
+            const SizedBox(height: 6),
+            Expanded(
+              child: vouchers.when(
+                data: (items) {
+                  if (items.isEmpty) {
+                    return const Center(child: Text('No vouchers yet. Tap Generate.'));
+                  }
 
-            return ListView.separated(
-              padding: const EdgeInsets.all(12),
-              itemCount: filtered.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (context, i) {
-                final v = filtered[i];
-                final usedBytes = ((v.usageBytesIn ?? 0) + (v.usageBytesOut ?? 0));
-                final lines = <String>[
-                  'Password: ${v.password}',
-                  if (v.profile != null && v.profile!.isNotEmpty) 'Profile: ${v.profile}',
-                  if (v.expiresAt != null) 'Expires: ${v.expiresAt}',
-                  if (v.firstUsedAt != null) 'First used: ${v.firstUsedAt}',
-                  if (usedBytes > 0) 'Used: ${_humanBytes(usedBytes)}',
-                  if (v.lastSyncedAt != null) 'Synced: ${v.lastSyncedAt}',
-                ];
-                return Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.confirmation_number_outlined),
-                    title: Text(v.username),
-                    subtitle: Text(lines.join(' • ')),
-                    trailing: IconButton(
-                      tooltip: 'Delete',
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () async {
-                        await ref
-                            .read(voucherRepositoryProvider)
-                            .deleteVoucher(routerId: v.routerId, voucherId: v.id);
-                      },
-                    ),
-                  ),
-                );
-              },
-            );
-          },
-          error: (e, _) => Center(child: Text('Error: $e')),
-          loading: () => const Center(child: CircularProgressIndicator()),
+                  final filtered = items.where((v) {
+                    final isUsed = (v.firstUsedAt != null) || v.status == VoucherStatus.used;
+                    switch (_filter) {
+                      case _VoucherUsageFilter.all:
+                        return true;
+                      case _VoucherUsageFilter.inUse:
+                        return isUsed;
+                      case _VoucherUsageFilter.neverUsed:
+                        return !isUsed;
+                    }
+                  }).toList();
+
+                  if (filtered.isEmpty) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          _filter == _VoucherUsageFilter.inUse
+                              ? 'No vouchers in use yet.'
+                              : 'No never-used vouchers.',
+                        ),
+                      ),
+                    );
+                  }
+
+                  return ListView.separated(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: filtered.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (context, i) {
+                      final v = filtered[i];
+                      final usedBytes = ((v.usageBytesIn ?? 0) + (v.usageBytesOut ?? 0));
+                      final lines = <String>[
+                        'Password: ${v.password}',
+                        if (v.profile != null && v.profile!.isNotEmpty) 'Profile: ${v.profile}',
+                        if (v.expiresAt != null) 'Expires: ${v.expiresAt}',
+                        if (v.firstUsedAt != null) 'First used: ${v.firstUsedAt}',
+                        if (usedBytes > 0) 'Used: ${_humanBytes(usedBytes)}',
+                        if (v.lastSyncedAt != null) 'Synced: ${v.lastSyncedAt}',
+                      ];
+                      return Card(
+                        child: ListTile(
+                          leading: const Icon(Icons.confirmation_number_outlined),
+                          title: Text(v.username),
+                          subtitle: Text(lines.join(' • ')),
+                          trailing: IconButton(
+                            tooltip: 'Delete',
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () async {
+                              await ref
+                                  .read(voucherRepositoryProvider)
+                                  .deleteVoucher(routerId: v.routerId, voucherId: v.id);
+                            },
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+                error: (e, _) => Center(child: Text('Error: $e')),
+                loading: () => const Center(child: CircularProgressIndicator()),
+              ),
+            ),
+          ],
         ),
       ),
     );

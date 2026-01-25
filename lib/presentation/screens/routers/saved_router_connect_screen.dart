@@ -8,10 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../../data/models/router_entry.dart';
 import '../../../data/services/routeros_api_client.dart';
 import '../../providers/active_router_provider.dart';
-import '../vouchers/vouchers_screen.dart';
-import 'hotspot_setup_wizard_screen.dart';
 import 'router_home_screen.dart';
-import 'router_initialization_screen.dart';
 import 'routers_screen.dart';
 
 class SavedRouterConnectScreen extends ConsumerStatefulWidget {
@@ -33,7 +30,6 @@ class _SavedRouterConnectScreenState extends ConsumerState<SavedRouterConnectScr
 
   bool _connecting = false;
   String? _status;
-  bool _connected = false;
 
   @override
   void initState() {
@@ -62,7 +58,6 @@ class _SavedRouterConnectScreenState extends ConsumerState<SavedRouterConnectScr
     setState(() {
       _connecting = true;
       _status = null;
-      _connected = false;
     });
 
     final client = RouterOsApiClient(host: host, port: 8728, timeout: const Duration(seconds: 8));
@@ -70,10 +65,7 @@ class _SavedRouterConnectScreenState extends ConsumerState<SavedRouterConnectScr
       await client.login(username: username, password: password);
       final resp = await client.command(['/system/resource/print']);
       final ok = resp.any((s) => s.type == '!re');
-      setState(() {
-        _connected = ok;
-        _status = ok ? 'Connected.' : 'Connected, but no data returned.';
-      });
+      setState(() => _status = ok ? 'Connected.' : 'Connected, but no data returned.');
 
       if (ok && mounted) {
         ref.read(activeRouterProvider.notifier).set(
@@ -85,6 +77,7 @@ class _SavedRouterConnectScreenState extends ConsumerState<SavedRouterConnectScr
                 password: password,
               ),
             );
+        // For existing routers, go straight into workspace.
         context.go(RouterHomeScreen.routePath);
       }
     } on RouterOsApiException catch (e) {
@@ -99,41 +92,6 @@ class _SavedRouterConnectScreenState extends ConsumerState<SavedRouterConnectScr
       await client.close();
       if (mounted) setState(() => _connecting = false);
     }
-  }
-
-  void _openInitialize() {
-    context.push(
-      RouterInitializationScreen.routePath,
-      extra: RouterInitializationArgs(
-        host: _hostCtrl.text,
-        username: _usernameCtrl.text.trim(),
-        password: _passwordCtrl.text,
-      ),
-    );
-  }
-
-  void _openHotspotSetup() {
-    context.push(
-      HotspotSetupWizardScreen.routePath,
-      extra: HotspotSetupArgs(
-        routerId: widget.router.id,
-        host: _hostCtrl.text,
-        username: _usernameCtrl.text.trim(),
-        password: _passwordCtrl.text,
-      ),
-    );
-  }
-
-  void _openVouchers() {
-    context.go(
-      VouchersScreen.routePath,
-      extra: VouchersArgs(
-        routerId: widget.router.id,
-        host: _hostCtrl.text,
-        username: _usernameCtrl.text.trim(),
-        password: _passwordCtrl.text,
-      ),
-    );
   }
 
   @override
@@ -225,21 +183,6 @@ class _SavedRouterConnectScreenState extends ConsumerState<SavedRouterConnectScr
                                 )
                               : const Icon(Icons.link),
                           label: const Text('Connect'),
-                        ),
-                        FilledButton.icon(
-                          onPressed: (!_connected || _connecting) ? null : _openInitialize,
-                          icon: const Icon(Icons.tune),
-                          label: const Text('Initialize'),
-                        ),
-                        FilledButton.icon(
-                          onPressed: (!_connected || _connecting) ? null : _openHotspotSetup,
-                          icon: const Icon(Icons.wifi_tethering),
-                          label: const Text('Hotspot setup'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: (!_connected || _connecting) ? null : _openVouchers,
-                          icon: const Icon(Icons.confirmation_number_outlined),
-                          label: const Text('Vouchers'),
                         ),
                       ],
                     ),

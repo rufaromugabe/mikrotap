@@ -17,7 +17,7 @@ class RoutersScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Routers'),
+        title: const Text('Switch router'),
         actions: [
           IconButton(
             tooltip: 'Discover (MNDP)',

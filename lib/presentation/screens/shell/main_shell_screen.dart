@@ -23,10 +23,6 @@ class MainShellScreen extends StatelessWidget {
         onDestinationSelected: _onTap,
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.router_outlined),
-            label: 'Routers',
-          ),
-          NavigationDestination(
             icon: Icon(Icons.workspaces_outline),
             label: 'Workspace',
           ),

@@ -48,7 +48,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       // Logged in: keep users out of auth screens.
-      if (isSplashing || isLoggingIn) return RoutersScreen.routePath;
+      if (isSplashing || isLoggingIn) {
+        return active == null ? RoutersScreen.routePath : RouterHomeScreen.routePath;
+      }
 
       // Router-first: guard workspace routes if no active router.
       final loc = state.matchedLocation;
@@ -64,49 +66,45 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
+      // Router selection / switching (NOT in bottom tabs).
+      GoRoute(
+        path: RoutersScreen.routePath,
+        builder: (context, state) => const RoutersScreen(),
+      ),
+      GoRoute(
+        path: SavedRouterConnectScreen.routePath,
+        builder: (context, state) {
+          final extra = state.extra;
+          if (extra is! RouterEntry) {
+            return const Scaffold(
+              body: SafeArea(child: Center(child: Text('Missing router data.'))),
+            );
+          }
+          return SavedRouterConnectScreen(router: extra);
+        },
+      ),
+      GoRoute(
+        path: RoutersDiscoveryScreen.routePath,
+        builder: (context, state) => const RoutersDiscoveryScreen(),
+      ),
+      GoRoute(
+        path: RouterDeviceDetailScreen.routePath,
+        builder: (context, state) {
+          final extra = state.extra;
+          if (extra is! MndpMessage) {
+            return const Scaffold(
+              body: SafeArea(child: Center(child: Text('Missing router details.'))),
+            );
+          }
+          return RouterDeviceDetailScreen(message: extra);
+        },
+      ),
+
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) {
           return MainShellScreen(navigationShell: navigationShell);
         },
         branches: [
-          // Routers tab
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: RoutersScreen.routePath,
-                builder: (context, state) => const RoutersScreen(),
-              ),
-              GoRoute(
-                path: SavedRouterConnectScreen.routePath,
-                builder: (context, state) {
-                  final extra = state.extra;
-                  if (extra is! RouterEntry) {
-                    return const Scaffold(
-                      body: SafeArea(child: Center(child: Text('Missing router data.'))),
-                    );
-                  }
-                  return SavedRouterConnectScreen(router: extra);
-                },
-              ),
-              GoRoute(
-                path: RoutersDiscoveryScreen.routePath,
-                builder: (context, state) => const RoutersDiscoveryScreen(),
-              ),
-              GoRoute(
-                path: RouterDeviceDetailScreen.routePath,
-                builder: (context, state) {
-                  final extra = state.extra;
-                  if (extra is! MndpMessage) {
-                    return const Scaffold(
-                      body: SafeArea(child: Center(child: Text('Missing router details.'))),
-                    );
-                  }
-                  return RouterDeviceDetailScreen(message: extra);
-                },
-              ),
-            ],
-          ),
-
           // Workspace tab (guarded by redirect)
           StatefulShellBranch(
             routes: [
