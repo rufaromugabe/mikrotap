@@ -183,6 +183,7 @@ class _MarketingPanel extends StatelessWidget {
             const SizedBox(height: 20),
             const _Bullet(text: 'Zero-touch router onboarding (guided setup)'),
             const _Bullet(text: 'Voucher generation + QR codes + PDF/thermal print'),
+            const _Bullet(text: 'Portal branding with live preview (WebView)'),
             const _Bullet(text: 'RBAC: admin / operator / viewer'),
             const _Bullet(text: 'Reports: revenue, active users, bandwidth'),
             const SizedBox(height: 20),

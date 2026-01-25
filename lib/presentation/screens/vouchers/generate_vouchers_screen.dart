@@ -1,15 +1,13 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:uuid/uuid.dart';
 
-import '../../../data/models/voucher.dart';
 import '../../../data/services/routeros_api_client.dart';
 import '../../providers/auth_providers.dart';
 import '../../providers/voucher_providers.dart';
+import '../../services/voucher_generation_service.dart';
 
 class GenerateVouchersArgs {
   const GenerateVouchersArgs({
@@ -98,8 +96,6 @@ class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen>
     final passLen = int.tryParse(_passLenCtrl.text) ?? 0;
     final prefix = _prefixCtrl.text;
     final limitUptime = _uptimeCtrl.text;
-    final parsedUptime = _parseRouterOsDuration(limitUptime);
-    final expiresAt = parsedUptime == null ? null : DateTime.now().add(parsedUptime);
     final price = num.tryParse(_priceCtrl.text.trim());
     final quota = num.tryParse(_quotaCtrl.text.trim());
     final quotaBytes = (quota != null && quota > 0)
@@ -120,12 +116,6 @@ class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen>
       _status = null;
     });
 
-    final rnd = Random.secure();
-    String token(int len) {
-      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-      return List.generate(len, (_) => chars[rnd.nextInt(chars.length)]).join();
-    }
-
     final client = RouterOsApiClient(
       host: widget.args.host,
       port: 8728,
@@ -133,61 +123,24 @@ class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen>
     );
 
     try {
-      await client.login(username: widget.args.username, password: widget.args.password);
-
-      final soldAt = DateTime.now();
-      for (var i = 0; i < count; i++) {
-        final user = '${prefix.isEmpty ? '' : '${prefix.toUpperCase()}-'}${token(userLen)}';
-        final pass = token(passLen);
-
-        String fmt(DateTime d) {
-          String two(int n) => n.toString().padLeft(2, '0');
-          return '${d.year}${two(d.month)}${two(d.day)}${two(d.hour)}${two(d.minute)}${two(d.second)}';
-        }
-
-        final comment = expiresAt == null ? 'mikrotap' : 'mikrotap exp=${fmt(expiresAt)}';
-
-        // Push to router as Hotspot user
-        final attrs = <String, String>{
-          'name': user,
-          'password': pass,
-          // Mark vouchers managed by MikroTap (used by cleanup scheduler).
-          'comment': comment,
-        };
-        if ((_selectedProfile ?? '').isNotEmpty) {
-          attrs['profile'] = _selectedProfile!;
-        }
-        if (limitUptime.trim().isNotEmpty) {
-          attrs['limit-uptime'] = limitUptime.trim();
-        }
-        if (quotaBytes != null) {
-          // Data quota is a per-user limit in RouterOS Hotspot.
-          attrs['limit-bytes-total'] = '$quotaBytes';
-        }
-        await client.add('/ip/hotspot/user/add', attrs);
-
-        // Save in repo
-        final v = Voucher(
-          id: const Uuid().v4(),
-          routerId: widget.args.routerId,
-          username: user,
-          password: pass,
-          profile: _selectedProfile,
-          price: (price == null || price == 0) ? null : price,
-          expiresAt: expiresAt,
-          soldAt: soldAt,
-          soldByUserId: seller?.uid,
-          soldByName: seller?.displayName ?? seller?.email,
-          createdAt: DateTime.now(),
-        );
-        await ref.read(voucherRepositoryProvider).upsertVoucher(v);
-
-        if (i % 5 == 0) {
-          setState(() => _status = 'Created ${i + 1}/$count...');
-        }
-      }
-
-      setState(() => _status = 'Done. Created $count vouchers.');
+      await VoucherGenerationService.generateAndPush(
+        client: client,
+        repo: ref.read(voucherRepositoryProvider),
+        routerId: widget.args.routerId,
+        host: widget.args.host,
+        username: widget.args.username,
+        password: widget.args.password,
+        count: count,
+        prefix: prefix,
+        userLen: userLen,
+        passLen: passLen,
+        limitUptime: limitUptime,
+        profile: _selectedProfile,
+        price: price,
+        quotaBytes: quotaBytes,
+        seller: seller,
+        onProgress: (m) => setState(() => _status = m),
+      );
       if (!mounted) return;
       context.pop();
     } on RouterOsApiException catch (e) {
@@ -200,28 +153,6 @@ class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen>
       await client.close();
       if (mounted) setState(() => _running = false);
     }
-  }
-
-  Duration? _parseRouterOsDuration(String input) {
-    final s = input.trim().toLowerCase();
-    if (s.isEmpty) return null;
-    final m = RegExp(r'^(\d+)\s*([smhdw])$').firstMatch(s);
-    if (m == null) return null;
-    final n = int.tryParse(m.group(1)!) ?? 0;
-    final unit = m.group(2)!;
-    switch (unit) {
-      case 's':
-        return Duration(seconds: n);
-      case 'm':
-        return Duration(minutes: n);
-      case 'h':
-        return Duration(hours: n);
-      case 'd':
-        return Duration(days: n);
-      case 'w':
-        return Duration(days: 7 * n);
-    }
-    return null;
   }
 
   @override

@@ -12,9 +12,11 @@ class PrintVouchersArgs {
   const PrintVouchersArgs({
     required this.routerId,
     this.filter = VoucherPrintFilter.all,
+    this.voucherIds,
   });
   final String routerId;
   final VoucherPrintFilter filter;
+  final List<String>? voucherIds;
 }
 
 class PrintVouchersScreen extends ConsumerWidget {
@@ -35,7 +37,12 @@ class PrintVouchersScreen extends ConsumerWidget {
       body: SafeArea(
         child: vouchers.when(
           data: (items) {
-            final filtered = items.where((v) {
+            final byId = {for (final v in items) v.id: v};
+            final base = (args.voucherIds != null && args.voucherIds!.isNotEmpty)
+                ? args.voucherIds!.map((id) => byId[id]).whereType<Voucher>().toList()
+                : items;
+
+            final filtered = base.where((v) {
               final isUsed = (v.firstUsedAt != null) || v.status == VoucherStatus.used;
               switch (args.filter) {
                 case VoucherPrintFilter.all:

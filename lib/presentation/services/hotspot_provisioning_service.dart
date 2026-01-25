@@ -1,6 +1,8 @@
 import '../../../data/services/routeros_api_client.dart';
 
 class HotspotProvisioningService {
+  static const _isolationRuleComment = 'MikroTap Isolation';
+
   static String? networkFor(String gw, int cidr) {
     if (cidr < 1 || cidr > 30) return null;
     final parts = gw.split('.');
@@ -21,6 +23,68 @@ class HotspotProvisioningService {
     return '$na.$nb.$nc.$nd/$cidr';
   }
 
+  static Future<void> _applyClientIsolationRule(
+    RouterOsApiClient c, {
+    required String networkCidr,
+    required bool clientIsolation,
+  }) async {
+    // We implement "guest isolation" as a simple forward-chain drop:
+    // block traffic from hotspot subnet -> hotspot subnet (client-to-client + local device access).
+    // Internet-bound traffic is unaffected (dst-address is not in subnet).
+    final rows = await c.printRows('/ip/firewall/filter/print');
+    final existing = rows.where((r) => (r['comment'] ?? '') == _isolationRuleComment).toList();
+
+    if (!clientIsolation) {
+      // Shared / office mode: remove our rule if present.
+      for (final r in existing) {
+        final id = r['.id'];
+        if (id != null && id.isNotEmpty) {
+          try {
+            await c.removeById('/ip/firewall/filter/remove', id: id);
+          } catch (_) {
+            // Non-fatal: keep provisioning going.
+          }
+        }
+      }
+      return;
+    }
+
+    if (existing.isEmpty) {
+      await c.add('/ip/firewall/filter/add', {
+        'chain': 'forward',
+        'action': 'drop',
+        'src-address': networkCidr,
+        'dst-address': networkCidr,
+        'comment': _isolationRuleComment,
+      });
+      return;
+    }
+
+    // Keep rule in sync (best effort). If multiple exist, update the first and remove extras.
+    final firstId = existing.first['.id'];
+    if (firstId != null && firstId.isNotEmpty) {
+      await c.setById('/ip/firewall/filter/set', id: firstId, attrs: {
+        'chain': 'forward',
+        'action': 'drop',
+        'src-address': networkCidr,
+        'dst-address': networkCidr,
+        'disabled': 'no',
+        'comment': _isolationRuleComment,
+      });
+    }
+
+    for (final r in existing.skip(1)) {
+      final id = r['.id'];
+      if (id != null && id.isNotEmpty) {
+        try {
+          await c.removeById('/ip/firewall/filter/remove', id: id);
+        } catch (_) {
+          // ignore
+        }
+      }
+    }
+  }
+
   static Future<void> apply(
     RouterOsApiClient c, {
     required Set<String> lanInterfaces,
@@ -29,6 +93,7 @@ class HotspotProvisioningService {
     required String poolStart,
     required String poolEnd,
     String? wanInterface,
+    bool clientIsolation = false,
     bool takeExportSnapshot = true,
   }) async {
     if (lanInterfaces.isEmpty) {
@@ -188,6 +253,13 @@ class HotspotProvisioningService {
         });
       }
     }
+
+    // I3) Optional guest isolation (Cafe mode)
+    await _applyClientIsolationRule(
+      c,
+      networkCidr: network,
+      clientIsolation: clientIsolation,
+    );
 
     // I2) Hotspot user profile (used by vouchers)
     final userProfiles = await c.printRows('/ip/hotspot/user/profile/print');

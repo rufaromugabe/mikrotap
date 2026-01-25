@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../data/services/routeros_api_client.dart';
 import '../../services/hotspot_portal_service.dart';
 import '../../services/hotspot_provisioning_service.dart';
+import 'portal_branding_screen.dart';
 import 'router_home_screen.dart';
 
 class RouterInitializationArgs {
@@ -598,6 +599,42 @@ class _RouterInitializationScreenState extends State<RouterInitializationScreen>
                       const Text('• Install voucher auto-cleanup'),
                       const SizedBox(height: 8),
                       Text(_doCreateUser ? '• Create MikroTap user (${_mkUserCtrl.text.trim()})' : '• Skip MikroTap user'),
+                      const SizedBox(height: 10),
+                      Card(
+                        elevation: 0,
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(Icons.web, size: 20),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Killer feature: Portal preview',
+                                      style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Customize the hotspot login page with a live WebView preview, then apply it to the router.',
+                                      style: Theme.of(context).textTheme.bodySmall,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    OutlinedButton.icon(
+                                      onPressed: _loading ? null : () => context.push(PortalBrandingScreen.routePath),
+                                      icon: const Icon(Icons.visibility_outlined),
+                                      label: const Text('Open Portal designer'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                       const SizedBox(height: 8),
                       Text(
                         'Nothing has been changed yet. Tap Next to run.',
