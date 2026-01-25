@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../data/services/routeros_api_client.dart';
 import '../../services/hotspot_portal_service.dart';
+import '../../services/hotspot_provisioning_service.dart';
 import 'router_home_screen.dart';
 
 class RouterInitializationArgs {
@@ -37,6 +38,13 @@ class _RouterInitializationScreenState extends State<RouterInitializationScreen>
 
   Map<String, String>? _identity;
   List<Map<String, String>> _services = const [];
+  List<Map<String, String>> _interfaces = const [];
+  String? _wanInterface;
+  final Set<String> _lanInterfaces = <String>{};
+  final _gatewayCtrl = TextEditingController(text: '192.168.88.1');
+  final _cidrCtrl = TextEditingController(text: '24');
+  final _poolStartCtrl = TextEditingController(text: '192.168.88.10');
+  final _poolEndCtrl = TextEditingController(text: '192.168.88.254');
 
   final _mkUserCtrl = TextEditingController(text: 'mikrotap');
   final _mkPassCtrl = TextEditingController();
@@ -57,9 +65,38 @@ class _RouterInitializationScreenState extends State<RouterInitializationScreen>
 
   @override
   void dispose() {
+    _gatewayCtrl.dispose();
+    _cidrCtrl.dispose();
+    _poolStartCtrl.dispose();
+    _poolEndCtrl.dispose();
     _mkUserCtrl.dispose();
     _mkPassCtrl.dispose();
     super.dispose();
+  }
+
+  void _ensureInterfaceDefaults() {
+    if (_interfaces.isEmpty) return;
+    final names = _interfaces.map((r) => r['name']).whereType<String>().toList();
+    if (names.isEmpty) return;
+
+    if (_wanInterface == null || _wanInterface!.isEmpty) {
+      final ether1 = names.where((n) => n.toLowerCase() == 'ether1').toList();
+      _wanInterface = ether1.isNotEmpty ? ether1.first : names.first;
+    }
+
+    if (_lanInterfaces.isEmpty) {
+      final wan = _wanInterface;
+      final candidates = names.where((n) {
+        final ln = n.toLowerCase();
+        if (wan != null && n == wan) return false;
+        return ln.startsWith('ether') || ln.startsWith('wlan');
+      }).toList();
+      if (candidates.isNotEmpty) {
+        _lanInterfaces.addAll(candidates);
+      } else {
+        _lanInterfaces.addAll(names.where((n) => n != wan));
+      }
+    }
   }
 
   void _logLine(String line) {
@@ -109,7 +146,15 @@ class _RouterInitializationScreenState extends State<RouterInitializationScreen>
       setState(() {
         _identity = idRow.isNotEmpty ? idRow.first : null;
         _services = svcRows;
+        _interfaces = const [];
         _status = 'Refreshed.';
+      });
+
+      // Interfaces are used for hotspot provisioning; fetch them too.
+      final ifRows = await c.printRows('/interface/print');
+      setState(() {
+        _interfaces = ifRows;
+        _ensureInterfaceDefaults();
       });
     });
   }
@@ -218,13 +263,29 @@ class _RouterInitializationScreenState extends State<RouterInitializationScreen>
     await _run((c) async {
       _logLine('Connecting…');
 
-      // Always refresh first so the user sees current status after run.
       if (_doCreateUser) {
         final name = _mkUserCtrl.text.trim();
         _logLine('Creating MikroTap API user "$name"…');
         await _createMikroTapUser(c);
         _logLine('MikroTap user ready.');
       }
+
+      final gw = _gatewayCtrl.text.trim();
+      final cidr = int.tryParse(_cidrCtrl.text.trim()) ?? 24;
+      final poolStart = _poolStartCtrl.text.trim();
+      final poolEnd = _poolEndCtrl.text.trim();
+
+      _logLine('Provisioning hotspot…');
+      await HotspotProvisioningService.apply(
+        c,
+        lanInterfaces: _lanInterfaces,
+        wanInterface: _wanInterface,
+        gateway: gw,
+        cidr: cidr,
+        poolStart: poolStart,
+        poolEnd: poolEnd,
+      );
+      _logLine('Hotspot ready.');
 
       // Install a default hotspot portal template (customizable in-app).
       _logLine('Installing portal template…');
@@ -279,7 +340,7 @@ class _RouterInitializationScreenState extends State<RouterInitializationScreen>
           onStepContinue: _loading
               ? null
               : () {
-                  if (_stepIndex < 3) setState(() => _stepIndex++);
+                  if (_stepIndex < 4) setState(() => _stepIndex++);
                 },
           onStepCancel: _loading
               ? null
@@ -287,7 +348,7 @@ class _RouterInitializationScreenState extends State<RouterInitializationScreen>
                   if (_stepIndex > 0) setState(() => _stepIndex--);
                 },
           controlsBuilder: (context, details) {
-            final isLast = _stepIndex == 3;
+            final isLast = _stepIndex == 4;
             return Padding(
               padding: const EdgeInsets.only(top: 12),
               child: Wrap(
@@ -369,9 +430,120 @@ class _RouterInitializationScreenState extends State<RouterInitializationScreen>
               ),
             ),
             Step(
-              title: const Text('Choose what to apply'),
-              subtitle: const Text('Nothing runs until final step'),
+              title: const Text('Hotspot setup'),
+              subtitle: const Text('LAN/WAN + addressing'),
               isActive: _stepIndex >= 1,
+              content: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: _wanInterface,
+                    decoration: const InputDecoration(
+                      labelText: 'WAN interface (for NAT)',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('None')),
+                      ..._interfaces
+                          .map((i) => i['name'])
+                          .whereType<String>()
+                          .map((name) => DropdownMenuItem(value: name, child: Text(name))),
+                    ],
+                    onChanged: _loading
+                        ? null
+                        : (v) {
+                            setState(() {
+                              _wanInterface = v;
+                              _lanInterfaces.remove(v);
+                            });
+                          },
+                  ),
+                  const SizedBox(height: 12),
+                  Text('LAN interfaces (hotspot bridge members)', style: Theme.of(context).textTheme.titleSmall),
+                  const SizedBox(height: 8),
+                  ..._interfaces.map((i) => i['name']).whereType<String>().map((name) {
+                    final selected = _lanInterfaces.contains(name);
+                    final disabled = (_wanInterface != null && name == _wanInterface);
+                    return CheckboxListTile(
+                      value: selected,
+                      onChanged: (_loading || disabled)
+                          ? null
+                          : (v) {
+                              setState(() {
+                                if (v == true) {
+                                  _lanInterfaces.add(name);
+                                } else {
+                                  _lanInterfaces.remove(name);
+                                }
+                              });
+                            },
+                      title: Text(name),
+                      dense: true,
+                      controlAffinity: ListTileControlAffinity.leading,
+                    );
+                  }),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: TextField(
+                          controller: _gatewayCtrl,
+                          enabled: !_loading,
+                          decoration: const InputDecoration(
+                            labelText: 'Gateway IP',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        flex: 1,
+                        child: TextField(
+                          controller: _cidrCtrl,
+                          enabled: !_loading,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'CIDR',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _poolStartCtrl,
+                          enabled: !_loading,
+                          decoration: const InputDecoration(
+                            labelText: 'Pool start',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: _poolEndCtrl,
+                          enabled: !_loading,
+                          decoration: const InputDecoration(
+                            labelText: 'Pool end',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Step(
+              title: const Text('Admin user'),
+              subtitle: const Text('Optional MikroTap API user'),
+              isActive: _stepIndex >= 2,
               content: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -408,7 +580,7 @@ class _RouterInitializationScreenState extends State<RouterInitializationScreen>
             Step(
               title: const Text('Review'),
               subtitle: const Text('Confirm before running'),
-              isActive: _stepIndex >= 2,
+              isActive: _stepIndex >= 3,
               content: Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -416,6 +588,10 @@ class _RouterInitializationScreenState extends State<RouterInitializationScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Will apply:', style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 8),
+                      const Text('• Hotspot provisioning (bridge, DHCP, hotspot, NAT)'),
+                      const Text('• Install default portal template'),
+                      const Text('• Install voucher auto-cleanup'),
                       const SizedBox(height: 8),
                       Text(_doCreateUser ? '• Create MikroTap user (${_mkUserCtrl.text.trim()})' : '• Skip MikroTap user'),
                       const SizedBox(height: 8),
@@ -431,7 +607,7 @@ class _RouterInitializationScreenState extends State<RouterInitializationScreen>
             Step(
               title: const Text('Run'),
               subtitle: const Text('Execute and view progress'),
-              isActive: _stepIndex >= 3,
+              isActive: _stepIndex >= 4,
               content: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
