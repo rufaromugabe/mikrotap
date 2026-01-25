@@ -21,6 +21,7 @@ import '../presentation/screens/vouchers/print_vouchers_screen.dart';
 import '../presentation/screens/vouchers/vouchers_screen.dart';
 import '../presentation/screens/reports/reports_screen.dart';
 import '../presentation/screens/shell/main_shell_screen.dart';
+import '../presentation/screens/routers/router_reboot_wait_screen.dart';
 import 'package:mikrotik_mndp/message.dart';
 import '../data/models/router_entry.dart';
 import '../presentation/providers/active_router_provider.dart';
@@ -167,6 +168,18 @@ final routerProvider = Provider<GoRouter>((ref) {
                     );
                   }
                   return RouterInitializationScreen(args: extra);
+                },
+              ),
+              GoRoute(
+                path: RouterRebootWaitScreen.routePath,
+                builder: (context, state) {
+                  final extra = state.extra;
+                  if (extra is! RouterRebootWaitArgs) {
+                    return const Scaffold(
+                      body: SafeArea(child: Center(child: Text('Missing reboot data.'))),
+                    );
+                  }
+                  return RouterRebootWaitScreen(args: extra);
                 },
               ),
               GoRoute(
