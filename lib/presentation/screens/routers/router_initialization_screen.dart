@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../data/services/routeros_api_client.dart';
+import '../../services/hotspot_portal_service.dart';
 import 'router_home_screen.dart';
 
 class RouterInitializationArgs {
@@ -224,6 +225,11 @@ class _RouterInitializationScreenState extends State<RouterInitializationScreen>
         await _createMikroTapUser(c);
         _logLine('MikroTap user ready.');
       }
+
+      // Install a default hotspot portal template (customizable in-app).
+      _logLine('Installing portal template…');
+      await HotspotPortalService.applyDefaultPortal(c, routerName: _identity?['name'] ?? 'MikroTap Wi‑Fi');
+      _logLine('Portal template installed.');
 
       // Always install cleanup silently (keeps router tidy).
       _logLine('Installing voucher auto-cleanup…');

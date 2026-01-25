@@ -6,6 +6,7 @@ import '../../providers/active_router_provider.dart';
 import '../vouchers/vouchers_screen.dart';
 import 'hotspot_setup_wizard_screen.dart';
 import 'hotspot_user_profiles_screen.dart';
+import 'portal_branding_screen.dart';
 import 'router_initialization_screen.dart';
 import 'routers_screen.dart';
 
@@ -128,6 +129,12 @@ class RouterHomeScreen extends ConsumerWidget {
                   title: 'Plans',
                   subtitle: 'Speed profiles for vouchers',
                   onTap: () => context.push(HotspotUserProfilesScreen.routePath),
+                ),
+                _ActionCard(
+                  icon: Icons.web,
+                  title: 'Portal',
+                  subtitle: 'Login page design',
+                  onTap: () => context.push(PortalBrandingScreen.routePath),
                 ),
               ],
             ),
