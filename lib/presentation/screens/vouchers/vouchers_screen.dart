@@ -178,17 +178,26 @@ class _VouchersBodyState extends ConsumerState<_VouchersBody> {
                       final v = filtered[i];
                       final usedBytes = ((v.usageBytesIn ?? 0) + (v.usageBytesOut ?? 0));
                       final lines = <String>[
-                        'Password: ${v.password}',
-                        if (v.profile != null && v.profile!.isNotEmpty) 'Profile: ${v.profile}',
-                        if (v.expiresAt != null) 'Expires: ${v.expiresAt}',
-                        if (v.firstUsedAt != null) 'First used: ${v.firstUsedAt}',
+                        'Pass: ${v.password}',
+                        if (v.price != null) 'Price: \$${v.price}',
+                        if (v.soldByName != null) 'By: ${v.soldByName}',
+                        if (v.firstUsedAt != null) 
+                          'Started: ${_formatDate(v.firstUsedAt!)}'
+                        else 
+                          'Created: ${_formatDate(v.createdAt)}',
                         if (usedBytes > 0) 'Used: ${_humanBytes(usedBytes)}',
-                        if (v.lastSyncedAt != null) 'Synced: ${v.lastSyncedAt}',
                       ];
                       return Card(
                         child: ListTile(
-                          leading: const Icon(Icons.confirmation_number_outlined),
-                          title: Text(v.username),
+                          leading: Icon(
+                            v.status == VoucherStatus.active 
+                                ? Icons.confirmation_number 
+                                : Icons.check_circle,
+                            color: v.status == VoucherStatus.active 
+                                ? Colors.green 
+                                : Colors.grey,
+                          ),
+                          title: Text(v.username, style: const TextStyle(fontWeight: FontWeight.bold)),
                           subtitle: Text(lines.join(' • ')),
                           trailing: IconButton(
                             tooltip: 'Delete',
@@ -248,5 +257,10 @@ String _humanBytes(int n) {
   if (n >= mb) return '${(n / mb).toStringAsFixed(2)} MB';
   if (n >= kb) return '${(n / kb).toStringAsFixed(2)} KB';
   return '$n B';
+}
+
+String _formatDate(DateTime date) {
+  return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')} '
+         '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
 }
 

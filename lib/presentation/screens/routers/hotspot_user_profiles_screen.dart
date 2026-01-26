@@ -191,6 +191,41 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
                         const Text('Paused time'),
                       ],
                     ),
+                    if (_timeType == TicketType.paused) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Validity Limit (Auto-calculated)',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue.shade900,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _calculateValidityLimit(_validity),
+                              style: TextStyle(color: Colors.blue.shade800),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Tickets will expire if not used within this time (-vl: tag)',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.blue.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 10),
                     TextField(
                       controller: dataLimitCtrl,
@@ -488,6 +523,41 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
                         const Text('Paused time'),
                       ],
                     ),
+                    if (_timeType == TicketType.paused) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Validity Limit (Auto-calculated)',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue.shade900,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _calculateValidityLimit(_validity),
+                              style: TextStyle(color: Colors.blue.shade800),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Tickets will expire if not used within this time (-vl: tag)',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.blue.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 10),
                     TextField(
                       controller: dataLimitCtrl,
@@ -726,7 +796,22 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
 
                 return Card(
                   child: ListTile(
-                    title: Text(plan.name),
+                    title: Row(
+                      children: [
+                        Expanded(child: Text(plan.name)),
+                        const SizedBox(width: 8),
+                        Chip(
+                          label: Text(
+                            plan.timeType == TicketType.elapsed ? 'ELAPSED' : 'PAUSED',
+                            style: const TextStyle(fontSize: 10),
+                          ),
+                          visualDensity: VisualDensity.compact,
+                          backgroundColor: plan.timeType == TicketType.elapsed 
+                              ? Colors.orange.withOpacity(0.2) 
+                              : Colors.blue.withOpacity(0.2),
+                        ),
+                      ],
+                    ),
                     subtitle: Text(subtitle),
                     onTap: _loading ? null : () => _editPlan(plan),
                     trailing: IconButton(
@@ -745,5 +830,22 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
         ),
       ),
     );
+  }
+
+  /// Calculates validity limit display string for paused tickets
+  String _calculateValidityLimit(String validity) {
+    if (validity.endsWith('d')) {
+      final d = int.parse(validity.replaceAll('d', ''));
+      return '${d + 1} days (calculated from validity + 1 day)';
+    } else if (validity.endsWith('h')) {
+      final h = int.parse(validity.replaceAll('h', ''));
+      final days = (h / 24).ceil();
+      return '${days > 0 ? days : 1} days (calculated from ${h}h)';
+    } else if (validity.endsWith('m')) {
+      final m = int.parse(validity.replaceAll('m', ''));
+      final days = (m / 1440).ceil();
+      return '${days > 0 ? days : 1} days (calculated from ${m}m)';
+    }
+    return '30 days (default)';
   }
 }
