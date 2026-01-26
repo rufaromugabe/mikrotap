@@ -122,7 +122,7 @@ class HotspotProvisioningService {
     const hsProfile = 'mikrotap';
     const hsServer = 'mikrotap';
     const hsUserProfile = 'mikrotap';
-    const natComment = 'MikroTap NAT';
+    const natComment = 'mikroticket masquerade hotspot network';
 
     // A) Decide which bridge to use.
     final override = (hotspotInterfaceOverride ?? '').trim();
@@ -134,42 +134,59 @@ class HotspotProvisioningService {
 
     // If the selected LAN ports are already in an existing bridge, reuse it.
     // This avoids moving ports around (safer) and helps keep the router reachable.
-    final String bridge;
+    // Also search for existing bridge1 or bridge-hotspot (Mikroticket standard).
+    var accessInterface = '';
     if (override.isNotEmpty) {
-      bridge = override;
+      accessInterface = override;
     } else {
-      final portRows = await c.printRows('/interface/bridge/port/print');
-      final bridgesInUse = <String>{};
-      for (final iface in lanInterfaces) {
-        final row = portRows.where((p) => (p['interface'] ?? '') == iface).toList();
-        if (row.isEmpty) continue;
-        final b = (row.first['bridge'] ?? '').trim();
-        if (b.isNotEmpty) bridgesInUse.add(b);
+      // First, check for existing standard bridges (bridge1, bridge-hotspot)
+      final bridgeRows = await c.printRows('/interface/bridge/print');
+      final standardBridges = ['bridge1', 'bridge-hotspot'];
+      String? foundStandardBridge;
+      for (final bridgeName in standardBridges) {
+        final bridge = bridgeRows.where((b) => (b['name'] ?? '') == bridgeName).toList();
+        if (bridge.isNotEmpty) {
+          foundStandardBridge = bridgeName;
+          break;
+        }
       }
 
-      if (bridgesInUse.length == 1) {
-        bridge = bridgesInUse.first;
-        onProgress?.call('Using existing LAN bridge "$bridge"…');
-      } else if (bridgesInUse.isEmpty) {
-        bridge = managedBridgeName;
-        onProgress?.call('Creating hotspot bridge…');
-        final existingBridge = await c.findOne('/interface/bridge/print', key: 'name', value: bridge);
-        if (existingBridge == null) {
-          try {
-            await c.add('/interface/bridge/add', {'name': bridge});
-          } on RouterOsApiException catch (e) {
-            if (!e.message.toLowerCase().contains('already')) rethrow;
-          }
+      if (foundStandardBridge != null) {
+        accessInterface = foundStandardBridge;
+        onProgress?.call('Using existing bridge "$accessInterface"…');
+      } else {
+        final portRows = await c.printRows('/interface/bridge/port/print');
+        final bridgesInUse = <String>{};
+        for (final iface in lanInterfaces) {
+          final row = portRows.where((p) => (p['interface'] ?? '') == iface).toList();
+          if (row.isEmpty) continue;
+          final b = (row.first['bridge'] ?? '').trim();
+          if (b.isNotEmpty) bridgesInUse.add(b);
         }
+
+        if (bridgesInUse.length == 1) {
+          accessInterface = bridgesInUse.first;
+          onProgress?.call('Using existing LAN bridge "$accessInterface"…');
+        } else if (bridgesInUse.isEmpty) {
+          accessInterface = managedBridgeName;
+          onProgress?.call('Creating hotspot bridge…');
+          final existingBridge = await c.findOne('/interface/bridge/print', key: 'name', value: accessInterface);
+          if (existingBridge == null) {
+            try {
+              await c.add('/interface/bridge/add', {'name': accessInterface});
+            } on RouterOsApiException catch (e) {
+              if (!e.message.toLowerCase().contains('already')) rethrow;
+            }
+          }
 
         // B) Add selected ports to managed bridge
         onProgress?.call('Adding guest ports…');
         for (final iface in lanInterfaces) {
-          final exists = portRows.any((p) => (p['interface'] ?? '') == iface && (p['bridge'] ?? '') == bridge);
+          final exists = portRows.any((p) => (p['interface'] ?? '') == iface && (p['bridge'] ?? '') == accessInterface);
           if (exists) continue;
           try {
             await c.add('/interface/bridge/port/add', {
-              'bridge': bridge,
+              'bridge': accessInterface,
               'interface': iface,
             });
           } on RouterOsApiException catch (e) {
@@ -199,6 +216,9 @@ class HotspotProvisioningService {
         );
       }
     }
+    if (accessInterface.isEmpty) {
+      throw const RouterOsApiException('Missing access interface.');
+    }
 
     // C) Ensure the router keeps the SAME gateway IP (do not change numeric IP).
     onProgress?.call('Keeping router IP unchanged…');
@@ -217,20 +237,30 @@ class HotspotProvisioningService {
       onProgress?.call('Assigning gateway IP to bridge…');
       await c.add('/ip/address/add', {
         'address': desiredAddr,
-        'interface': bridge,
+        'interface': accessInterface,
       });
     } else {
       final row = existingAddr.first;
       final currentIface = (row['interface'] ?? '').trim();
-      if (currentIface != bridge) {
+      final isDynamic = (row['dynamic'] ?? '').toLowerCase() == 'true';
+      if (currentIface != accessInterface) {
         final id = row['.id'];
-        if (id == null || id.isEmpty) {
-          throw RouterOsApiException(
-            'Could not move the existing gateway IP to bridge "$bridge" (missing id).',
-          );
+        if (isDynamic) {
+          // RouterOS doesn't allow changing dynamic address bindings (e.g. DHCP client).
+          // Keep IP where it is and run hotspot on that interface to avoid breaking access.
+          onProgress?.call('LAN IP is dynamic; using "$currentIface" as access interface…');
+          if (currentIface.isNotEmpty) {
+            accessInterface = currentIface;
+          }
+        } else {
+          if (id == null || id.isEmpty) {
+            throw RouterOsApiException(
+              'Could not move the existing gateway IP to "$accessInterface" (missing id).',
+            );
+          }
+          onProgress?.call('Moving gateway IP to "$accessInterface" (same IP)…');
+          await c.setById('/ip/address/set', id: id, attrs: {'interface': accessInterface});
         }
-        onProgress?.call('Moving gateway IP to "$bridge" (same IP)…');
-        await c.setById('/ip/address/set', id: id, attrs: {'interface': bridge});
       }
     }
 
@@ -254,7 +284,7 @@ class HotspotProvisioningService {
     if (dhcpRow.isEmpty) {
       await c.add('/ip/dhcp-server/add', {
         'name': dhcp,
-        'interface': bridge,
+        'interface': accessInterface,
         'address-pool': pool,
         'disabled': 'no',
       });
@@ -262,7 +292,7 @@ class HotspotProvisioningService {
       final id = dhcpRow.first['.id'];
       if (id != null) {
         await c.setById('/ip/dhcp-server/set', id: id, attrs: {
-          'interface': bridge,
+          'interface': accessInterface,
           'address-pool': pool,
           'disabled': 'no',
         });
@@ -324,7 +354,7 @@ class HotspotProvisioningService {
     if (existingServer.isEmpty) {
       await c.add('/ip/hotspot/add', {
         'name': hsServer,
-        'interface': bridge,
+        'interface': accessInterface,
         'profile': hsProfile,
         'address-pool': pool,
         'disabled': 'no',
@@ -333,7 +363,7 @@ class HotspotProvisioningService {
       final id = existingServer.first['.id'];
       if (id != null) {
         await c.setById('/ip/hotspot/set', id: id, attrs: {
-          'interface': bridge,
+          'interface': accessInterface,
           'profile': hsProfile,
           'address-pool': pool,
           'disabled': 'no',
@@ -393,6 +423,17 @@ class HotspotProvisioningService {
       final apiId = await c.findId('/ip/service/print', key: 'name', value: 'api');
       if (apiId != null) {
         await c.setById('/ip/service/set', id: apiId, attrs: {'address': network});
+      }
+    } catch (_) {
+      // Non-fatal.
+    }
+
+    // Move www service to port 87 (Mikroticket standard)
+    onProgress?.call('Moving www service to port 87…');
+    try {
+      final wwwId = await c.findId('/ip/service/print', key: 'name', value: 'www');
+      if (wwwId != null) {
+        await c.setById('/ip/service/set', id: wwwId, attrs: {'port': '87'});
       }
     } catch (_) {
       // Non-fatal.

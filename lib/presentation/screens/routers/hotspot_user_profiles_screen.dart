@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../providers/active_router_provider.dart';
+import '../../../data/models/hotspot_plan.dart';
+import '../../../data/repositories/router_plan_repository.dart';
 import '../../../data/services/routeros_api_client.dart';
 import 'router_home_screen.dart';
 
@@ -20,7 +22,7 @@ class HotspotUserProfilesScreen extends ConsumerStatefulWidget {
 class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesScreen> {
   bool _loading = false;
   String? _status;
-  List<Map<String, String>> _profiles = const [];
+  List<HotspotPlan> _plans = const [];
 
   @override
   void initState() {
@@ -40,9 +42,10 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
     final c = RouterOsApiClient(host: session.host, port: 8728, timeout: const Duration(seconds: 8));
     try {
       await c.login(username: session.username, password: session.password);
-      final rows = await c.printRows('/ip/hotspot/user/profile/print');
-      rows.sort((a, b) => (a['name'] ?? '').compareTo(b['name'] ?? ''));
-      setState(() => _profiles = rows);
+      final repo = RouterPlanRepository(client: c);
+      final plans = await repo.fetchPlans();
+      plans.sort((a, b) => a.name.compareTo(b.name));
+      setState(() => _plans = plans);
     } catch (e) {
       setState(() => _status = 'Load failed: $e');
     } finally {
@@ -56,25 +59,34 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
     if (session == null) return;
 
     final nameCtrl = TextEditingController();
-    final downCtrl = TextEditingController(text: '2'); // Mbps
-    final upCtrl = TextEditingController(text: '2'); // Mbps
+    final priceCtrl = TextEditingController(text: '0');
+    final validityCtrl = TextEditingController(text: '1h');
+    final dataLimitCtrl = TextEditingController(text: '0');
+    final downCtrl = TextEditingController(text: '5');
+    final upCtrl = TextEditingController(text: '5');
     final sharedCtrl = TextEditingController(text: '1');
-    // Note: RouterOS Hotspot *profiles* don't support data quota limits on many versions.
-    // Data quota is applied per-user during voucher generation instead.
+    TicketMode _mode = TicketMode.userPass;
+    int _userLen = 6;
+    int _passLen = 6;
+    Charset _charset = Charset.numeric;
+    String _validity = '1h';
+
+    final validityOptions = ['1h', '12h', '1d', '7d', '30d'];
 
     Future<void> submit() async {
       final name = nameCtrl.text.trim();
+      final price = double.tryParse(priceCtrl.text.trim()) ?? 0;
+      final dataLimit = int.tryParse(dataLimitCtrl.text.trim()) ?? 0;
       final down = num.tryParse(downCtrl.text.trim());
       final up = num.tryParse(upCtrl.text.trim());
-      final shared = int.tryParse(sharedCtrl.text.trim());
+      final shared = int.tryParse(sharedCtrl.text.trim()) ?? 1;
 
       if (name.isEmpty) {
         setState(() => _status = 'Plan name required.');
         return;
       }
 
-      // RouterOS expects rate-limit like "2M/2M" (rx/tx). We’ll generate it from Mbps.
-      final rateLimit = (down != null && up != null && down > 0 && up > 0) ? '${down}M/${up}M' : null;
+      final rateLimit = (down != null && up != null && down > 0 && up > 0) ? '${down}M/${up}M' : '5M/5M';
 
       setState(() {
         _loading = true;
@@ -84,14 +96,24 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
       final c = RouterOsApiClient(host: session.host, port: 8728, timeout: const Duration(seconds: 8));
       try {
         await c.login(username: session.username, password: session.password);
-        final attrs = <String, String>{
-          'name': name,
-          'shared-users': (shared == null || shared < 1) ? '1' : '$shared',
-        };
-        if (rateLimit != null) attrs['rate-limit'] = rateLimit;
+        final repo = RouterPlanRepository(client: c);
 
-        await c.add('/ip/hotspot/user/profile/add', attrs);
-        if (mounted) Navigator.of(context).pop(); // close dialog
+        final plan = HotspotPlan(
+          id: '', // Will be set by router
+          name: name,
+          price: price,
+          validity: _validity,
+          dataLimitMb: dataLimit,
+          mode: _mode,
+          userLen: _userLen,
+          passLen: _passLen,
+          charset: _charset,
+          rateLimit: rateLimit,
+          sharedUsers: shared,
+        );
+
+        await repo.addPlan(plan);
+        if (mounted) Navigator.of(context).pop();
         await _refresh();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -110,113 +132,242 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
     await showDialog<void>(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: const Text('New voucher plan'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Plan name (profile)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: downCtrl,
-                      keyboardType: TextInputType.number,
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('New voucher plan'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: nameCtrl,
                       decoration: const InputDecoration(
-                        labelText: 'Down (Mbps)',
+                        labelText: 'Name',
                         border: OutlineInputBorder(),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: upCtrl,
-                      keyboardType: TextInputType.number,
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: priceCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       decoration: const InputDecoration(
-                        labelText: 'Up (Mbps)',
+                        labelText: 'Price',
                         border: OutlineInputBorder(),
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: sharedCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Shared users (usually 1)',
-                  border: OutlineInputBorder(),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      value: _validity,
+                      decoration: const InputDecoration(
+                        labelText: 'Validity',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: validityOptions.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+                      onChanged: (v) {
+                        if (v != null) {
+                          setDialogState(() {
+                            _validity = v;
+                            validityCtrl.text = v;
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: dataLimitCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Data Limit (MB, 0 = Unlimited)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SegmentedButton<TicketMode>(
+                      segments: const [
+                        ButtonSegment(value: TicketMode.userPass, label: Text('User/Pass')),
+                        ButtonSegment(value: TicketMode.pin, label: Text('PIN')),
+                      ],
+                      selected: {_mode},
+                      onSelectionChanged: (Set<TicketMode> selection) {
+                        setDialogState(() {
+                          _mode = selection.first;
+                          if (_mode == TicketMode.pin) {
+                            _passLen = _userLen; // PIN mode: passLen = userLen
+                          }
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<int>(
+                            value: _userLen,
+                            decoration: const InputDecoration(
+                              labelText: 'User Length',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: [4, 5, 6, 7, 8]
+                                .map((len) => DropdownMenuItem(value: len, child: Text('$len')))
+                                .toList(),
+                            onChanged: (v) {
+                              if (v != null) {
+                                setDialogState(() {
+                                  _userLen = v;
+                                  if (_mode == TicketMode.pin) {
+                                    _passLen = v;
+                                  }
+                                });
+                              }
+                            },
+                          ),
+                        ),
+                        if (_mode == TicketMode.userPass) ...[
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: DropdownButtonFormField<int>(
+                              value: _passLen,
+                              decoration: const InputDecoration(
+                                labelText: 'Pass Length',
+                                border: OutlineInputBorder(),
+                              ),
+                              items: [4, 5, 6, 7, 8]
+                                  .map((len) => DropdownMenuItem(value: len, child: Text('$len')))
+                                  .toList(),
+                              onChanged: (v) {
+                                if (v != null) {
+                                  setDialogState(() => _passLen = v);
+                                }
+                              },
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<Charset>(
+                      value: _charset,
+                      decoration: const InputDecoration(
+                        labelText: 'Charset',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: Charset.numeric, child: Text('Numeric')),
+                        DropdownMenuItem(value: Charset.alphanumeric, child: Text('Alphanumeric')),
+                      ],
+                      onChanged: (v) {
+                        if (v != null) {
+                          setDialogState(() => _charset = v);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: downCtrl,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Down (Mbps)',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: upCtrl,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Up (Mbps)',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: sharedCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Shared Users',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 10),
-              Text(
-                'Data quota is set per voucher (user), not on the profile.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: _loading ? null : () => Navigator.of(context).pop(), child: const Text('Cancel')),
-            FilledButton(onPressed: _loading ? null : submit, child: const Text('Create')),
-          ],
+              actions: [
+                TextButton(
+                  onPressed: _loading ? null : () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: _loading ? null : submit,
+                  child: const Text('Create'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
   }
 
-  Future<void> _editPlan(Map<String, String> current) async {
+  Future<void> _editPlan(HotspotPlan plan) async {
     final session = ref.read(activeRouterProvider);
     if (session == null) return;
-    final id = current['.id'];
-    if (id == null || id.isEmpty) return;
 
-    final nameCtrl = TextEditingController(text: current['name'] ?? '');
-    final sharedCtrl = TextEditingController(text: current['shared-users'] ?? '1');
+    final nameCtrl = TextEditingController(text: plan.name);
+    final priceCtrl = TextEditingController(text: '${plan.price}');
+    final dataLimitCtrl = TextEditingController(text: '${plan.dataLimitMb}');
+    final downCtrl = TextEditingController();
+    final upCtrl = TextEditingController();
+    final sharedCtrl = TextEditingController(text: '${plan.sharedUsers}');
 
-    // rate-limit "2M/2M" -> Mbps numbers (best-effort)
+    // Parse rate-limit "5M/5M" -> Mbps
     num? parseM(String s) {
       final m = RegExp(r'([\d.]+)\s*M', caseSensitive: false).firstMatch(s);
       if (m == null) return null;
       return num.tryParse(m.group(1)!);
     }
 
-    final rate = current['rate-limit'] ?? '';
+    final rate = plan.rateLimit;
     final parts = rate.split('/');
-    final downCtrl = TextEditingController(text: parts.isNotEmpty ? (parseM(parts[0])?.toString() ?? '') : '');
-    final upCtrl = TextEditingController(text: parts.length > 1 ? (parseM(parts[1])?.toString() ?? '') : '');
+    if (parts.isNotEmpty) {
+      final down = parseM(parts[0]);
+      if (down != null) downCtrl.text = down.toString();
+    }
+    if (parts.length > 1) {
+      final up = parseM(parts[1]);
+      if (up != null) upCtrl.text = up.toString();
+    }
 
-    final sessionTimeoutCtrl = TextEditingController(text: current['session-timeout'] ?? '');
-    final idleTimeoutCtrl = TextEditingController(text: current['idle-timeout'] ?? '');
+    TicketMode _mode = plan.mode;
+    int _userLen = plan.userLen;
+    int _passLen = plan.passLen;
+    Charset _charset = plan.charset;
+    String _validity = plan.validity;
+
+    final validityOptions = ['1h', '12h', '1d', '7d', '30d'];
 
     Future<void> submit() async {
       final name = nameCtrl.text.trim();
+      final price = double.tryParse(priceCtrl.text.trim()) ?? 0;
+      final dataLimit = int.tryParse(dataLimitCtrl.text.trim()) ?? 0;
+      final down = num.tryParse(downCtrl.text.trim());
+      final up = num.tryParse(upCtrl.text.trim());
+      final shared = int.tryParse(sharedCtrl.text.trim()) ?? 1;
+
       if (name.isEmpty) {
         setState(() => _status = 'Plan name required.');
         return;
       }
 
-      final shared = int.tryParse(sharedCtrl.text.trim());
-      final down = num.tryParse(downCtrl.text.trim());
-      final up = num.tryParse(upCtrl.text.trim());
-
-      final rateLimit = (down != null && up != null && down > 0 && up > 0) ? '${down}M/${up}M' : null;
-
-      final attrs = <String, String>{
-        'name': name,
-        'shared-users': (shared == null || shared < 1) ? '1' : '$shared',
-      };
-      if (rateLimit != null) attrs['rate-limit'] = rateLimit;
-      if (sessionTimeoutCtrl.text.trim().isNotEmpty) attrs['session-timeout'] = sessionTimeoutCtrl.text.trim();
-      if (idleTimeoutCtrl.text.trim().isNotEmpty) attrs['idle-timeout'] = idleTimeoutCtrl.text.trim();
+      final rateLimit = (down != null && up != null && down > 0 && up > 0) ? '${down}M/${up}M' : plan.rateLimit;
 
       setState(() {
         _loading = true;
@@ -226,7 +377,22 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
       final c = RouterOsApiClient(host: session.host, port: 8728, timeout: const Duration(seconds: 8));
       try {
         await c.login(username: session.username, password: session.password);
-        await c.setById('/ip/hotspot/user/profile/set', id: id, attrs: attrs);
+        final repo = RouterPlanRepository(client: c);
+
+        final updatedPlan = plan.copyWith(
+          name: name,
+          price: price,
+          validity: _validity,
+          dataLimitMb: dataLimit,
+          mode: _mode,
+          userLen: _userLen,
+          passLen: _passLen,
+          charset: _charset,
+          rateLimit: rateLimit,
+          sharedUsers: shared,
+        );
+
+        await repo.updatePlan(updatedPlan);
         if (mounted) Navigator.of(context).pop();
         await _refresh();
         if (mounted) {
@@ -246,81 +412,191 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
     await showDialog<void>(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: const Text('Edit voucher plan'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(labelText: 'Plan name', border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 10),
-                Row(
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Edit voucher plan'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      child: TextField(
-                        controller: downCtrl,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: 'Down (Mbps)', border: OutlineInputBorder()),
+                    TextField(
+                      controller: nameCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Name',
+                        border: OutlineInputBorder(),
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: TextField(
-                        controller: upCtrl,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: 'Up (Mbps)', border: OutlineInputBorder()),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: priceCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'Price',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      value: _validity,
+                      decoration: const InputDecoration(
+                        labelText: 'Validity',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: validityOptions.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+                      onChanged: (v) {
+                        if (v != null) {
+                          setDialogState(() => _validity = v);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: dataLimitCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Data Limit (MB, 0 = Unlimited)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SegmentedButton<TicketMode>(
+                      segments: const [
+                        ButtonSegment(value: TicketMode.userPass, label: Text('User/Pass')),
+                        ButtonSegment(value: TicketMode.pin, label: Text('PIN')),
+                      ],
+                      selected: {_mode},
+                      onSelectionChanged: (Set<TicketMode> selection) {
+                        setDialogState(() {
+                          _mode = selection.first;
+                          if (_mode == TicketMode.pin) {
+                            _passLen = _userLen;
+                          }
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<int>(
+                            value: _userLen,
+                            decoration: const InputDecoration(
+                              labelText: 'User Length',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: [4, 5, 6, 7, 8]
+                                .map((len) => DropdownMenuItem(value: len, child: Text('$len')))
+                                .toList(),
+                            onChanged: (v) {
+                              if (v != null) {
+                                setDialogState(() {
+                                  _userLen = v;
+                                  if (_mode == TicketMode.pin) {
+                                    _passLen = v;
+                                  }
+                                });
+                              }
+                            },
+                          ),
+                        ),
+                        if (_mode == TicketMode.userPass) ...[
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: DropdownButtonFormField<int>(
+                              value: _passLen,
+                              decoration: const InputDecoration(
+                                labelText: 'Pass Length',
+                                border: OutlineInputBorder(),
+                              ),
+                              items: [4, 5, 6, 7, 8]
+                                  .map((len) => DropdownMenuItem(value: len, child: Text('$len')))
+                                  .toList(),
+                              onChanged: (v) {
+                                if (v != null) {
+                                  setDialogState(() => _passLen = v);
+                                }
+                              },
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<Charset>(
+                      value: _charset,
+                      decoration: const InputDecoration(
+                        labelText: 'Charset',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: Charset.numeric, child: Text('Numeric')),
+                        DropdownMenuItem(value: Charset.alphanumeric, child: Text('Alphanumeric')),
+                      ],
+                      onChanged: (v) {
+                        if (v != null) {
+                          setDialogState(() => _charset = v);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: downCtrl,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Down (Mbps)',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: upCtrl,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Up (Mbps)',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: sharedCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Shared Users',
+                        border: OutlineInputBorder(),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: sharedCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Shared users', border: OutlineInputBorder()),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: _loading ? null : () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
                 ),
-                const SizedBox(height: 10),
-                Text(
-                  'Data quota is set per voucher (user), not on the profile.',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: sessionTimeoutCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Session timeout (optional, e.g. 1h)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: idleTimeoutCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Idle timeout (optional, e.g. 5m)',
-                    border: OutlineInputBorder(),
-                  ),
+                FilledButton(
+                  onPressed: _loading ? null : submit,
+                  child: const Text('Save'),
                 ),
               ],
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: _loading ? null : () => Navigator.of(context).pop(), child: const Text('Cancel')),
-            FilledButton(onPressed: _loading ? null : submit, child: const Text('Save')),
-          ],
+            );
+          },
         );
       },
     );
   }
 
-  Future<void> _deleteProfile(Map<String, String> p) async {
+  Future<void> _deletePlan(HotspotPlan plan) async {
     final session = ref.read(activeRouterProvider);
     if (session == null) return;
-    final id = p['.id'];
-    final name = p['name'] ?? '';
-    if (id == null || id.isEmpty) return;
 
     setState(() {
       _loading = true;
@@ -330,11 +606,12 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
     final c = RouterOsApiClient(host: session.host, port: 8728, timeout: const Duration(seconds: 8));
     try {
       await c.login(username: session.username, password: session.password);
-      await c.removeById('/ip/hotspot/user/profile/remove', id: id);
+      final repo = RouterPlanRepository(client: c);
+      await repo.deletePlan(plan.id);
       await _refresh();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Deleted "$name"')),
+          SnackBar(content: Text('Deleted "${plan.name}"')),
         );
       }
     } catch (e) {
@@ -358,7 +635,7 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Voucher plans (profiles)'),
+        title: const Text('Voucher plans'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
@@ -394,26 +671,30 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
               ),
             ),
             const SizedBox(height: 12),
-            if (_profiles.isEmpty)
-              const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('No profiles yet. Tap + to add one.')))
+            if (_plans.isEmpty)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text('No plans yet. Tap + to add one.'),
+                ),
+              )
             else
-              ..._profiles.map((p) {
-                final name = p['name'] ?? '—';
-                final rate = p['rate-limit'] ?? '';
-                final shared = p['shared-users'] ?? '';
+              ..._plans.map((plan) {
                 final subtitle = [
-                  if (rate.isNotEmpty) 'Speed: $rate',
-                  if (shared.isNotEmpty) 'Shared: $shared',
+                  'Price: \$${plan.price}',
+                  'Validity: ${plan.validity}',
+                  if (plan.dataLimitMb > 0) 'Data: ${plan.dataLimitMb}MB' else 'Data: Unlimited',
+                  'Speed: ${plan.rateLimit}',
                 ].join(' • ');
 
                 return Card(
                   child: ListTile(
-                    title: Text(name),
-                    subtitle: Text(subtitle.isEmpty ? 'Profile' : subtitle),
-                    onTap: _loading ? null : () => _editPlan(p),
+                    title: Text(plan.name),
+                    subtitle: Text(subtitle),
+                    onTap: _loading ? null : () => _editPlan(plan),
                     trailing: IconButton(
                       tooltip: 'Delete',
-                      onPressed: _loading ? null : () => _deleteProfile(p),
+                      onPressed: _loading ? null : () => _deletePlan(plan),
                       icon: const Icon(Icons.delete_outline),
                     ),
                   ),
@@ -428,7 +709,4 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
       ),
     );
   }
-
-  // (Data quota is applied per voucher user in Generate Vouchers.)
 }
-

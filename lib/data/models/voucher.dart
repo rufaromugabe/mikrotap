@@ -139,5 +139,81 @@ class Voucher {
       status: parsedStatus,
     );
   }
+
+  /// Parses a RouterOS user row into a Voucher
+  /// Comment format: MT|b:<Batch>|p:<Price>|d:<Date>|by:<Operator>
+  /// If name matches password, assume PIN mode for display
+  static Voucher? fromRouterOs({
+    required Map<String, String> row,
+    required String routerId,
+  }) {
+    final username = row['name'] ?? '';
+    final password = row['password'] ?? '';
+    final comment = row['comment'] ?? '';
+    final profile = row['profile'] ?? '';
+
+    // Only parse vouchers with MT comment prefix
+    if (!comment.startsWith('MT|')) return null;
+
+    try {
+      // Parse comment: MT|b:<Batch>|p:<Price>|d:<Date>|by:<Operator>
+      double? price;
+      DateTime? soldAt;
+      String? soldByName;
+
+      final parts = comment.split('|');
+      for (final part in parts) {
+        if (part.startsWith('p:')) {
+          price = double.tryParse(part.substring(2));
+        } else if (part.startsWith('d:')) {
+          // Date format: YYYYMMDDHHmmss or ISO8601
+          final dateStr = part.substring(2);
+          soldAt = DateTime.tryParse(dateStr);
+          if (soldAt == null) {
+            // Try YYYYMMDDHHmmss format
+            if (dateStr.length == 14) {
+              try {
+                final year = int.parse(dateStr.substring(0, 4));
+                final month = int.parse(dateStr.substring(4, 6));
+                final day = int.parse(dateStr.substring(6, 8));
+                final hour = int.parse(dateStr.substring(8, 10));
+                final minute = int.parse(dateStr.substring(10, 12));
+                final second = int.parse(dateStr.substring(12, 14));
+                soldAt = DateTime(year, month, day, hour, minute, second);
+              } catch (_) {
+                // Ignore parse errors
+              }
+            }
+          }
+        } else if (part.startsWith('by:')) {
+          soldByName = part.substring(3);
+        }
+      }
+
+      // Use RouterOS .id as voucher id
+      final id = row['.id'] ?? '';
+
+      // If username == password, it's likely a PIN voucher
+      // The profile should tell us the mode, but for now we'll infer from equality
+
+      return Voucher(
+        id: id,
+        routerId: routerId,
+        username: username,
+        password: password,
+        profile: profile.isEmpty ? null : profile,
+        price: price,
+        createdAt: soldAt ?? DateTime.now(),
+        soldAt: soldAt,
+        soldByName: soldByName,
+        // RouterOS doesn't store expiresAt in comment, it's in limit-uptime
+        // We'll need to parse limit-uptime separately if needed
+        status: VoucherStatus.active,
+      );
+    } catch (e) {
+      // Parsing failed, return null
+      return null;
+    }
+  }
 }
 

@@ -1,125 +1,108 @@
 import 'dart:math';
 
-import 'package:uuid/uuid.dart';
-
 import '../../data/models/app_user.dart';
-import '../../data/models/voucher.dart';
-import '../../data/repositories/voucher_repository.dart';
+import '../../data/models/hotspot_plan.dart';
 import '../../data/services/routeros_api_client.dart';
 
 class VoucherGenerationService {
-  static Duration? parseRouterOsDuration(String input) {
-    final s = input.trim().toLowerCase();
-    if (s.isEmpty) return null;
-    final m = RegExp(r'^(\d+)\s*([smhdw])$').firstMatch(s);
-    if (m == null) return null;
-    final n = int.tryParse(m.group(1)!) ?? 0;
-    final unit = m.group(2)!;
-    switch (unit) {
-      case 's':
-        return Duration(seconds: n);
-      case 'm':
-        return Duration(minutes: n);
-      case 'h':
-        return Duration(hours: n);
-      case 'd':
-        return Duration(days: n);
-      case 'w':
-        return Duration(days: 7 * n);
-    }
-    return null;
-  }
-
-  static Future<List<Voucher>> generateAndPush({
+  /// Generates vouchers based on a HotspotPlan configuration
+  /// Vouchers are created directly on the router (no local database)
+  static Future<void> generateAndPush({
     required RouterOsApiClient client,
-    required VoucherRepository repo,
-    required String routerId,
-    required String host,
-    required String username,
-    required String password,
-    required int count,
-    required String prefix,
-    required int userLen,
-    required int passLen,
-    required String limitUptime,
-    required String? profile,
-    required num? price,
-    required int? quotaBytes,
-    AppUser? seller,
+    required HotspotPlan plan,
+    required int quantity,
+    required String batchId,
+    AppUser? operator,
     void Function(String message)? onProgress,
   }) async {
-    if (count <= 0 || count > 500) {
-      throw const RouterOsApiException('Count must be 1..500');
+    if (quantity <= 0 || quantity > 500) {
+      throw const RouterOsApiException('Quantity must be 1..500');
     }
-    if (userLen < 4 || passLen < 4) {
+    if (plan.userLen < 4 || plan.passLen < 4) {
       throw const RouterOsApiException('Lengths must be >= 4');
     }
 
-    final parsedUptime = parseRouterOsDuration(limitUptime);
-    final expiresAt = parsedUptime == null ? null : DateTime.now().add(parsedUptime);
+    onProgress?.call('Generating vouchers…');
 
     final rnd = Random.secure();
-    String token(int len) {
-      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-      return List.generate(len, (_) => chars[rnd.nextInt(chars.length)]).join();
+    
+    // Token generation based on charset
+    String generateToken(int len) {
+      if (plan.charset == Charset.numeric) {
+        // Numeric only: 0-9
+        const chars = '0123456789';
+        return List.generate(len, (_) => chars[rnd.nextInt(chars.length)]).join();
+      } else {
+        // Alphanumeric: exclude confusing characters (0, O, I, 1, l)
+        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        return List.generate(len, (_) => chars[rnd.nextInt(chars.length)]).join();
+      }
     }
 
-    String fmt(DateTime d) {
+    // Format date for comment: YYYYMMDDHHmmss
+    String formatDate(DateTime d) {
       String two(int n) => n.toString().padLeft(2, '0');
       return '${d.year}${two(d.month)}${two(d.day)}${two(d.hour)}${two(d.minute)}${two(d.second)}';
     }
 
-    onProgress?.call('Connecting…');
-    await client.login(username: username, password: password);
-
-    final out = <Voucher>[];
     final soldAt = DateTime.now();
+    final operatorName = operator?.displayName ?? operator?.email ?? 'System';
 
-    for (var i = 0; i < count; i++) {
-      final user = '${prefix.isEmpty ? '' : '${prefix.toUpperCase()}-'}${token(userLen)}';
-      final pass = token(passLen);
+    // Convert data limit from MB to bytes
+    final dataLimitBytes = plan.dataLimitMb > 0 ? (plan.dataLimitMb * 1024 * 1024) : null;
 
-      final comment = expiresAt == null ? 'mikrotap' : 'mikrotap exp=${fmt(expiresAt)}';
+    // Use the plan's RouterOS profile name
+    final profileName = plan.routerOsProfileName;
 
+    for (var i = 0; i < quantity; i++) {
+      String username;
+      String password;
+
+      if (plan.mode == TicketMode.pin) {
+        // PIN mode: username and password are the same
+        final pin = generateToken(plan.userLen);
+        username = pin;
+        password = pin;
+      } else {
+        // User/Pass mode: generate separate username and password
+        username = generateToken(plan.userLen);
+        password = generateToken(plan.passLen);
+      }
+
+      // Build comment: MT|b:<Batch>|p:<Price>|d:<Date>|by:<Operator>
+      final commentParts = <String>['MT'];
+      commentParts.add('b:$batchId');
+      commentParts.add('p:${plan.price}');
+      commentParts.add('d:${formatDate(soldAt)}');
+      commentParts.add('by:$operatorName');
+      final comment = commentParts.join('|');
+
+      // Build RouterOS user attributes
       final attrs = <String, String>{
-        'name': user,
-        'password': pass,
+        'name': username,
+        'password': password,
+        'profile': profileName,
         'comment': comment,
       };
-      if ((profile ?? '').isNotEmpty) {
-        attrs['profile'] = profile!;
+
+      // Add limit-uptime (validity)
+      if (plan.validity.isNotEmpty) {
+        attrs['limit-uptime'] = plan.validity;
       }
-      if (limitUptime.trim().isNotEmpty) {
-        attrs['limit-uptime'] = limitUptime.trim();
+
+      // Add data limit (limit-bytes-total)
+      if (dataLimitBytes != null) {
+        attrs['limit-bytes-total'] = '$dataLimitBytes';
       }
-      if (quotaBytes != null) {
-        attrs['limit-bytes-total'] = '$quotaBytes';
-      }
+
       await client.add('/ip/hotspot/user/add', attrs);
 
-      final v = Voucher(
-        id: const Uuid().v4(),
-        routerId: routerId,
-        username: user,
-        password: pass,
-        profile: profile,
-        price: (price == null || price == 0) ? null : price,
-        expiresAt: expiresAt,
-        soldAt: soldAt,
-        soldByUserId: seller?.uid,
-        soldByName: seller?.displayName ?? seller?.email,
-        createdAt: DateTime.now(),
-      );
-      await repo.upsertVoucher(v);
-      out.add(v);
-
-      if (i % 5 == 0) {
-        onProgress?.call('Created ${i + 1}/$count…');
+      if (i % 5 == 0 || i == quantity - 1) {
+        onProgress?.call('Created ${i + 1}/$quantity…');
       }
     }
 
-    onProgress?.call('Done. Created $count vouchers.');
-    return out;
+    onProgress?.call('Done. Created $quantity vouchers.');
   }
 }
 

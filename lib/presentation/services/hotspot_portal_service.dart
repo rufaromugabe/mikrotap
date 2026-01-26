@@ -111,10 +111,14 @@ class HotspotPortalService {
     RouterOsApiClient c, {
     required PortalBranding branding,
   }) async {
-    // Ensure login page files exist under hotspot/ directory.
-    await _upsertFile(c, name: 'hotspot/login.html', contents: _loginHtml(branding));
-    await _upsertFile(c, name: 'hotspot/logout.html', contents: _logoutHtml(branding));
-    await _upsertFile(c, name: 'hotspot/status.html', contents: _statusHtml(branding));
+    // Generate a random hash directory name: mkt_<random_hash>
+    final randomHash = _generateRandomHash();
+    final directoryName = 'mkt_$randomHash';
+
+    // Upload files to the random hash directory
+    await _upsertFile(c, name: '$directoryName/login.html', contents: _loginHtml(branding));
+    await _upsertFile(c, name: '$directoryName/logout.html', contents: _logoutHtml(branding));
+    await _upsertFile(c, name: '$directoryName/status.html', contents: _statusHtml(branding));
 
     // If hotspot profile exists, point it to our directory (idempotent).
     final profileId = await c.findId('/ip/hotspot/profile/print', key: 'name', value: 'mikrotap');
@@ -123,13 +127,26 @@ class HotspotPortalService {
         '/ip/hotspot/profile/set',
         id: profileId,
         attrs: {
-          'html-directory': 'hotspot',
-          // Prefer CHAP but allow PAP fallback if md5.js isn't present.
-          'login-by': 'http-chap,http-pap',
+          'html-directory': directoryName,
+          // Enable all login methods: cookie, http-chap, http-pap, mac-cookie
+          'login-by': 'cookie,http-chap,http-pap,mac-cookie',
           'http-cookie-lifetime': '1d',
         },
       );
     }
+  }
+
+  static String _generateRandomHash() {
+    // Generate a simple random hash (8 characters alphanumeric)
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    final random = DateTime.now().millisecondsSinceEpoch;
+    final buffer = StringBuffer();
+    var value = random;
+    for (var i = 0; i < 8; i++) {
+      buffer.write(chars[value % chars.length]);
+      value ~/= chars.length;
+    }
+    return buffer.toString();
   }
 
   /// Builds the same `login.html` content we upload to RouterOS, but with
@@ -202,18 +219,55 @@ class HotspotPortalService {
         ${logo == null ? '<div class="dot"></div>' : '<img class="logo" src="$logo" alt="logo" />'}
         <h1>$title</h1>
       </div>
-      <div class="sub">Enter your voucher username and password.</div>
+      <div class="sub">Enter your voucher code (PIN) or username and password.</div>
 
       <!-- MikroTik variables: \$(link-login-only) \$(chap-id) \$(chap-challenge) \$(error) -->
-      <form name="login" action="$formAction" method="post">
-        <label>Username</label>
-        <input name="username" value="$usernameValue" />
-        <label>Password</label>
-        <input name="password" type="password" />
+      <form name="login" action="$formAction" method="post" id="loginForm">
+        <label id="usernameLabel">Username or PIN</label>
+        <input name="username" id="usernameInput" value="$usernameValue" autocomplete="off" />
+        <label id="passwordLabel" style="display:none;">Password</label>
+        <input name="password" id="passwordInput" type="password" autocomplete="off" />
         <input type="hidden" name="dst" value="$dstValue" />
         <input type="hidden" name="popup" value="true" />
         <button class="btn" type="submit">Connect</button>
       </form>
+
+      <script>
+        (function() {
+          var usernameInput = document.getElementById('usernameInput');
+          var passwordInput = document.getElementById('passwordInput');
+          var usernameLabel = document.getElementById('usernameLabel');
+          var passwordLabel = document.getElementById('passwordLabel');
+          var form = document.getElementById('loginForm');
+          
+          // Detect if user enters a PIN (numeric only, 4-8 digits)
+          function handleInput() {
+            var value = usernameInput.value.trim();
+            // Check if it looks like a PIN (numeric, 4-8 digits)
+            if (/^\d{4,8}$/.test(value)) {
+              // PIN mode: fill both username and password with the PIN
+              passwordInput.value = value;
+              passwordInput.style.display = 'none';
+              passwordLabel.style.display = 'none';
+              usernameLabel.textContent = 'PIN Code';
+            } else {
+              // User/Pass mode: show password field
+              passwordInput.value = '';
+              passwordInput.style.display = 'block';
+              passwordLabel.style.display = 'block';
+              usernameLabel.textContent = 'Username';
+            }
+          }
+          
+          usernameInput.addEventListener('input', handleInput);
+          usernameInput.addEventListener('paste', function() {
+            setTimeout(handleInput, 10);
+          });
+          
+          // Initial check
+          handleInput();
+        })();
+      </script>
 
       ${previewMode ? '' : r'\$(if error)'}
       ${previewMode ? '' : r'  <div class="err">\$(error)</div>'}

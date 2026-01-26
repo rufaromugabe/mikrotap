@@ -7,10 +7,9 @@ import '../../providers/active_router_provider.dart';
 import '../../providers/auth_providers.dart';
 import '../../providers/router_dashboard_providers.dart';
 import '../../providers/voucher_providers.dart';
-import '../../services/voucher_generation_service.dart';
 import '../../../data/services/routeros_api_client.dart';
+import '../vouchers/generate_vouchers_screen.dart';
 import '../vouchers/vouchers_screen.dart';
-import '../vouchers/print_vouchers_screen.dart';
 import 'hotspot_setup_wizard_screen.dart';
 import 'hotspot_user_profiles_screen.dart';
 import 'portal_branding_screen.dart';
@@ -64,55 +63,20 @@ class _RouterHomeScreenState extends ConsumerState<RouterHomeScreen> {
       _quickStatus = 'Starting…';
     });
 
-    final seller = ref.read(authStateProvider).maybeWhen(data: (u) => u, orElse: () => null);
-    final client = RouterOsApiClient(host: session.host, port: 8728, timeout: const Duration(seconds: 8));
-
-    try {
-      final created = await VoucherGenerationService.generateAndPush(
-        client: client,
-        repo: ref.read(voucherRepositoryProvider),
-        routerId: session.routerId,
-        host: session.host,
-        username: session.username,
-        password: session.password,
-        count: 10,
-        prefix: 'MT',
-        userLen: 6,
-        passLen: 6,
-        limitUptime: '1h',
-        profile: 'mikrotap',
-        price: null,
-        quotaBytes: null,
-        seller: seller,
-        onProgress: (m) {
-          if (!mounted) return;
-          setState(() => _quickStatus = m);
-        },
+    // Navigate to the proper voucher generation screen
+    if (context.mounted) {
+      context.push(
+        '/workspace/vouchers/generate',
+        extra: GenerateVouchersArgs(
+          routerId: session.routerId,
+          host: session.host,
+          username: session.username,
+          password: session.password,
+        ),
       );
-
-      if (!mounted) return;
-      if (context.mounted) {
-        context.push(
-          PrintVouchersScreen.routePath,
-          extra: PrintVouchersArgs(
-            routerId: session.routerId,
-            filter: VoucherPrintFilter.neverUsed,
-            voucherIds: created.map((v) => v.id).toList(),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _quickStatus = 'Failed: $e');
-      }
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Quick print failed: $e')));
-      }
-    } finally {
-      await client.close();
-      if (mounted) {
-        setState(() => _quickBusy = false);
-      }
+    }
+    if (mounted) {
+      setState(() => _quickBusy = false);
     }
   }
 
