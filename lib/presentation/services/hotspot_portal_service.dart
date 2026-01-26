@@ -115,14 +115,37 @@ class HotspotPortalService {
     final randomHash = _generateRandomHash();
     final directoryName = 'mkt_$randomHash';
 
+    // Generate HTML content and validate size
+    final loginHtml = _loginHtml(branding, previewMode: false);
+    final loginSize = loginHtml.length; // String length in UTF-16 code units
+    
+    // RouterOS API has word size limits (typically 64KB per word)
+    // Warn if HTML is too large (with some safety margin)
+    // Estimate: each character is ~1 byte in UTF-8, but base64 is 4/3 size
+    if (loginSize > 50 * 1024) {
+      throw RouterOsApiException(
+        'HTML file too large (${(loginSize / 1024).toStringAsFixed(1)}KB). '
+        'Please use smaller images (under ~150KB each) or remove images.',
+      );
+    }
+
     // 1. Push Root Files (images are inlined as data URIs in HTML)
-    await _upsertFile(c, name: '$directoryName/login.html', contents: _loginHtml(branding, previewMode: false));
+    // Add small delays between uploads to prevent connection issues
+    await _upsertFile(c, name: '$directoryName/login.html', contents: loginHtml);
+    await Future.delayed(const Duration(milliseconds: 300));
+    
     await _upsertFile(c, name: '$directoryName/logout.html', contents: _logoutHtml(branding));
+    await Future.delayed(const Duration(milliseconds: 300));
+    
     await _upsertFile(c, name: '$directoryName/status.html', contents: _statusHtml(branding));
+    await Future.delayed(const Duration(milliseconds: 300));
+    
     await _upsertFile(c, name: '$directoryName/md5.js', contents: _md5Js());
+    await Future.delayed(const Duration(milliseconds: 300));
 
     // 2. Push CSS Directory
     await _upsertFile(c, name: '$directoryName/css/style.css', contents: _exactStyleCss(branding, false));
+    await Future.delayed(const Duration(milliseconds: 300));
 
     // 3. Point Hotspot Profile to this folder
     final profileId = await c.findId('/ip/hotspot/profile/print', key: 'name', value: 'mikrotap');

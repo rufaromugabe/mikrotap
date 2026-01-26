@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../../data/services/routeros_api_client.dart';
 import '../../providers/active_router_provider.dart';
@@ -84,9 +85,27 @@ class _PortalBrandingScreenState extends ConsumerState<PortalBrandingScreen> {
     try {
       setState(() => _status = null);
       
+      // FilePicker uses system picker on Android 13+ which doesn't require permissions
+      // For older Android versions, request permission if needed
+      try {
+        final storagePermission = await Permission.storage.status;
+        if (storagePermission.isDenied) {
+          final result = await Permission.storage.request();
+          if (result.isPermanentlyDenied) {
+            setState(() => _status = 'Storage permission is required. Please enable it in app settings.');
+            return;
+          }
+        }
+      } catch (_) {
+        // Permission handler might not be available or not needed (Android 13+)
+        // Continue anyway as system picker handles permissions
+      }
+      
       final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
         withData: true,
+        // Disable image compression (0 = no compression) to avoid temp file creation issues
+        compressionQuality: 0,
       );
       
       if (result == null || result.files.isEmpty) return;
@@ -121,6 +140,7 @@ class _PortalBrandingScreenState extends ConsumerState<PortalBrandingScreen> {
       _updatePreview();
     } catch (e) {
       setState(() => _status = 'Error picking image: $e');
+      debugPrint('Image picker error: $e');
     }
   }
 
@@ -223,7 +243,8 @@ class _PortalBrandingScreenState extends ConsumerState<PortalBrandingScreen> {
       _status = null;
     });
 
-    final c = RouterOsApiClient(host: session.host, port: 8728, timeout: const Duration(seconds: 8));
+    // Use longer timeout for portal upload (large files with images)
+    final c = RouterOsApiClient(host: session.host, port: 8728, timeout: const Duration(seconds: 30));
     try {
       await c.login(username: session.username, password: session.password);
       await HotspotPortalService.applyPortal(c, branding: branding);
@@ -231,6 +252,7 @@ class _PortalBrandingScreenState extends ConsumerState<PortalBrandingScreen> {
       setState(() => _status = 'Portal applied to router.');
     } catch (e) {
       setState(() => _status = 'Apply failed: $e');
+      debugPrint('Portal apply error: $e');
     } finally {
       await c.close();
       if (mounted) setState(() => _loading = false);
