@@ -33,153 +33,132 @@ class HotspotPlan {
   final int sharedUsers;
   final TicketType timeType; // paused or elapsed
 
-  /// Generates the RouterOS profile name with encoded metadata
-  /// Format: MT_<Name>_p:<price>_v:<validity>_d:<dataLimit>_m:<mode>_l:<lengths>_c:<charset>_t:<timeType>
-  /// Also includes Mikroticket-style flags: -u:<usageTime> -k:<keepTime> -l:<validityLimit>
-  /// (Shortened keys to avoid RouterOS profile name length limits)
+  /// Generates the RouterOS profile name matching MikroTicket format.
+  /// Format: profile_<Name>-se:-co:<Price>-pr:-lu:<UserLen>-lp:<PassLen>-ut:<Validity>-bt:<Data>-kt:<KeepTime>-nu:<Num>-np:<Num>-tp:<Type>
+  /// This format MUST match exactly for mkt_sp_core_10 script to parse correctly
   String get routerOsProfileName {
-    final modeStr = mode == TicketMode.pin ? 'pin' : 'up';
-    final charsetStr = charset == Charset.numeric ? 'num' : 'mix';
-    final lengthsStr = mode == TicketMode.pin ? '$userLen' : '$userLen,$passLen';
-    final typeStr = timeType == TicketType.elapsed ? 'el' : 'pa';
+    // Sanitize name: remove spaces (MikroTicket format doesn't allow spaces in profile names)
+    final safeName = name.replaceAll(' ', '');
     
-    // Truncate name if too long to avoid RouterOS profile name length limits
-    final safeName = name.length > 10 ? name.substring(0, 10) : name;
-    
-    // Base format with our tokens
-    final base = 'MT_${safeName}_p:${price}_v:${validity}_d:${dataLimitMb}_m:${modeStr}_l:${lengthsStr}_c:${charsetStr}_t:${typeStr}';
-    
-    // Add Mikroticket-style flags for script compatibility (shortened keys)
-    // -u: Usage Time limit (same as validity) - shortened from -ut:
-    // -k: Keep Time (true = elapsed/keeps running, false = paused/stops on logout) - shortened from -kt:
-    // -l: Validity Limit (for paused mode, ensures ticket expires even if not used) - shortened from -vl:
-    // Standard MikroTicket Logic: elapsed → k:true (Time keeps running), paused → k:false (Time stops on logout)
-    final keepTime = timeType == TicketType.elapsed ? 'true' : 'false';
-    
-    // Convert validity to RouterOS time format (e.g., "1h" -> "0d 01:00:00", "30d" -> "30d 00:00:00")
+    // Convert validity to RouterOS format (e.g., "1h" -> "0d 01:00:00", "1d" -> "1d 00:00:00")
     String formatRouterOsTime(String v) {
       if (v.endsWith('h')) {
-        final hours = int.parse(v.substring(0, v.length - 1));
-        return '0d ${hours.toString().padLeft(2, '0')}:00:00';
+        final h = int.parse(v.replaceAll('h', ''));
+        return '0d ${h.toString().padLeft(2, '0')}:00:00';
       } else if (v.endsWith('d')) {
-        final days = int.parse(v.substring(0, v.length - 1));
-        return '${days}d 00:00:00';
+        final d = int.parse(v.replaceAll('d', ''));
+        return '${d}d 00:00:00';
       } else if (v.endsWith('m')) {
-        final mins = int.parse(v.substring(0, v.length - 1));
-        final hours = mins ~/ 60;
-        final remainingMins = mins % 60;
-        return '0d ${hours.toString().padLeft(2, '0')}:${remainingMins.toString().padLeft(2, '0')}:00';
+        final m = int.parse(v.replaceAll('m', ''));
+        final h = m ~/ 60;
+        final rm = m % 60;
+        return '0d ${h.toString().padLeft(2, '0')}:${rm.toString().padLeft(2, '0')}:00';
       }
       throw ArgumentError('Invalid validity format: $v');
     }
     
     final utValue = formatRouterOsTime(validity);
-    final result = '$base-u:$utValue-k:$keepTime';
     
-    // For paused mode, add validity limit (typically 2-3x the usage time to prevent abuse)
+    // kt:false = Elapsed Time (Script removes user based on clock)
+    // kt:true  = Paused Time (RouterOS handles uptime, Script handles validity limit)
+    final kt = timeType == TicketType.elapsed ? 'false' : 'true';
+    final tp = timeType == TicketType.elapsed ? '1' : '2';
+    final bt = dataLimitMb > 0 ? '$dataLimitMb' : '';
+
+    // This string must be EXACT for the core script to find the values
+    // Format: profile_<Name>-se:-co:<Price>-pr:-lu:<UserLen>-lp:<PassLen>-ut:<Validity>-bt:<Data>-kt:<KeepTime>-nu:true-np:true-tp:<Type>
+    var profile = 'profile_$safeName-se:-co:$price-pr:-lu:$userLen-lp:$passLen-ut:$utValue-bt:$bt-kt:$kt-nu:true-np:true-tp:$tp';
+
+    // 8. Validity Limit (vl) - Only for Paused mode (kt:true)
+    // Used to expire unused paused tickets after X days.
     if (timeType == TicketType.paused) {
-      // Calculate validity limit (e.g., if usage is 1h, validity might be 3d)
-      String validityLimit;
-      if (validity.endsWith('h')) {
-        // Default validity: 3 days for hourly tickets
-        validityLimit = '3d 00:00:00';
-      } else if (validity.endsWith('d')) {
-        final days = int.parse(validity.substring(0, validity.length - 1));
-        // Validity is 2x the usage time for daily tickets
-        validityLimit = '${days * 2}d 00:00:00';
+      String vl;
+      if (validity.endsWith('d')) {
+        final d = int.parse(validity.replaceAll('d', ''));
+        vl = '${d + 1}d 00:00:00'; // Validity + 1 day
+      } else if (validity.endsWith('h')) {
+        final h = int.parse(validity.replaceAll('h', ''));
+        // Calculate days based on hours (minimum 1 day, or hours/24 rounded up)
+        final days = (h / 24).ceil();
+        vl = '${days > 0 ? days : 1}d 00:00:00';
       } else if (validity.endsWith('m')) {
-        // For minute-based tickets, use 7 days default validity
-        validityLimit = '7d 00:00:00';
+        final m = int.parse(validity.replaceAll('m', ''));
+        // Calculate days based on minutes (minimum 1 day, or minutes/1440 rounded up)
+        final days = (m / 1440).ceil();
+        vl = '${days > 0 ? days : 1}d 00:00:00';
       } else {
         throw ArgumentError('Invalid validity format for paused mode: $validity');
       }
-      return '$result-l:$validityLimit';
+      profile += '-vl:$vl';
     }
-    
-    return result;
+
+    return profile;
   }
 
   /// Parses a RouterOS profile row into a HotspotPlan
-  /// Returns null if the profile name doesn't start with MT_ or parsing fails
+  /// Returns null if the profile name doesn't start with profile_ or parsing fails
   static HotspotPlan? fromRouterOs(Map<String, String> row) {
-    final name = row['name'] ?? '';
-    if (!name.startsWith('MT_')) return null;
+    final name = row['name'];
+    if (name == null || !name.startsWith('profile_')) return null;
 
     try {
-      // Extract the base name and config hash
-      // Format: MT_<Name>_p:<price>_v:<validity>_d:<dataLimit>_m:<mode>_l:<lengths>_c:<charset>_t:<timeType>
-      final parts = name.substring(3).split('_'); // Remove "MT_" prefix
-      if (parts.isEmpty) return null;
+      // Extract Name: profile_<Name>-se:
+      final seIndex = name.indexOf('-se:');
+      if (seIndex == -1) return null;
+      final displayName = name.substring(8, seIndex); // Skip "profile_"
 
-      // Find the last part that starts with "p:" (the config hash starts here)
-      int configStartIndex = -1;
-      for (int i = parts.length - 1; i >= 0; i--) {
-        if (parts[i].startsWith('p:')) {
-          configStartIndex = i;
-          break;
+      // Helper to find value between key and next dash
+      String? val(String key) {
+        final start = name.indexOf(key);
+        if (start == -1) return null;
+        final vStart = start + key.length;
+        // Find next flag starting with -
+        final nextFlag = RegExp(r'-[a-z]{2}:');
+        final match = nextFlag.firstMatch(name.substring(vStart));
+        if (match != null) {
+          return name.substring(vStart, vStart + match.start);
         }
+        return name.substring(vStart);
       }
 
-      if (configStartIndex == -1) return null;
+      // Parse all required fields
+      final priceStr = val('-co:');
+      if (priceStr == null) return null;
+      final price = double.parse(priceStr);
 
-      // Reconstruct name (everything before config)
-      final displayName = parts.sublist(0, configStartIndex).join('_');
-      
-      // Parse config hash: p:<price>_v:<validity>_d:<dataLimit>_m:<mode>_l:<lengths>_c:<charset>_t:<timeType>
-      final configParts = parts.sublist(configStartIndex).join('_');
-      
-      // Parse individual config fields
-      double? price;
-      String? validity;
-      int? dataLimitMb;
-      TicketMode? mode;
-      int? userLen;
-      int? passLen;
-      Charset? charset;
+      final validityStr = val('-ut:');
+      if (validityStr == null) return null;
+      // Convert RouterOS time format back to short format (e.g., "0d 01:00:00" -> "1h")
+      final validity = _convertRouterOsTimeToShort(validityStr);
 
-      // Use regex to extract values (all required)
-      final priceMatch = RegExp(r'p:([\d\.]+)').firstMatch(configParts);
-      if (priceMatch == null) return null;
-      price = double.parse(priceMatch.group(1)!);
+      final dataStr = val('-bt:');
+      if (dataStr == null) return null;
+      final dataLimitMb = dataStr.isEmpty ? 0 : int.parse(dataStr);
 
-      final validityMatch = RegExp(r'v:([\w]+)').firstMatch(configParts);
-      if (validityMatch == null) return null;
-      validity = validityMatch.group(1)!;
+      final kt = val('-kt:');
+      if (kt == null) return null;
+      final timeType = kt == 'false' ? TicketType.elapsed : TicketType.paused;
 
-      final dataMatch = RegExp(r'd:(\d+)').firstMatch(configParts);
-      if (dataMatch == null) return null;
-      dataLimitMb = int.parse(dataMatch.group(1)!);
+      final luStr = val('-lu:');
+      if (luStr == null) return null;
+      final userLen = int.parse(luStr);
 
-      final modeMatch = RegExp(r'm:(up|pin)').firstMatch(configParts);
-      if (modeMatch == null) return null;
-      mode = modeMatch.group(1) == 'pin' ? TicketMode.pin : TicketMode.userPass;
+      final lpStr = val('-lp:');
+      if (lpStr == null) return null;
+      final passLen = int.parse(lpStr);
 
-      final lengthMatch = RegExp(r'l:(\d+)(?:,(\d+))?').firstMatch(configParts);
-      if (lengthMatch == null) return null;
-      userLen = int.parse(lengthMatch.group(1)!);
-      if (lengthMatch.group(2) != null) {
-        passLen = int.parse(lengthMatch.group(2)!);
-      } else {
-        // PIN mode: passLen = userLen
-        passLen = userLen;
-      }
+      // Note: nu is always 'true' in MikroTicket format, but we parse it for compatibility
+      final nu = val('-nu:');
+      if (nu == null) return null;
+      // In MikroTicket, nu:true means numeric charset
+      final charset = nu == 'true' ? Charset.numeric : Charset.alphanumeric;
 
-      final charsetMatch = RegExp(r'c:(num|mix)').firstMatch(configParts);
-      if (charsetMatch == null) return null;
-      charset = charsetMatch.group(1) == 'num' ? Charset.numeric : Charset.alphanumeric;
-
-      // Parse time type (required)
-      final typeMatch = RegExp(r't:(pa|el)').firstMatch(configParts);
-      if (typeMatch == null) return null;
-      final timeType = typeMatch.group(1) == 'el' 
-          ? TicketType.elapsed 
-          : TicketType.paused;
-
-      // All fields are required and parsed above
+      // Mode is inferred (not in MikroTicket format, default to userPass)
+      final mode = TicketMode.userPass;
 
       // Get RouterOS native properties
-      final id = row['.id'] ?? '';
-      final rateLimit = row['rate-limit'] ?? '';
+      final id = row['.id']!;
+      final rateLimit = row['rate-limit']!;
       final sharedUsers = int.parse(row['shared-users']!);
 
       return HotspotPlan(
@@ -200,6 +179,36 @@ class HotspotPlan {
       // Parsing failed, return null
       return null;
     }
+  }
+
+  /// Converts RouterOS time format (e.g., "0d 01:00:00") back to short format (e.g., "1h")
+  static String _convertRouterOsTimeToShort(String routerOsTime) {
+    // Parse format like "0d 01:00:00" or "30d 00:00:00"
+    final daysMatch = RegExp(r'(\d+)d').firstMatch(routerOsTime);
+    final timeMatch = RegExp(r'(\d+):(\d+):(\d+)').firstMatch(routerOsTime);
+    
+    if (daysMatch != null) {
+      final days = int.parse(daysMatch.group(1)!);
+      if (days > 0) {
+        return '${days}d';
+      }
+    }
+    
+    if (timeMatch != null) {
+      final hours = int.parse(timeMatch.group(1)!);
+      final mins = int.parse(timeMatch.group(2)!);
+      final secs = int.parse(timeMatch.group(3)!);
+      
+      if (hours > 0) {
+        return '${hours}h';
+      } else if (mins > 0) {
+        return '${mins}m';
+      } else if (secs > 0) {
+        return '${secs}s';
+      }
+    }
+    
+    throw ArgumentError('Unable to parse RouterOS time format: $routerOsTime');
   }
 
   /// Converts the plan to RouterOS attributes for /ip/hotspot/user/profile/add or /set

@@ -10,7 +10,7 @@ class RouterPlanRepository {
   final RouterOsApiClient client;
 
   /// Fetches all HotspotPlans from the router
-  /// Only returns plans with names starting with MT_
+  /// Only returns plans with names starting with profile_
   Future<List<HotspotPlan>> fetchPlans() async {
     final rows = await client.printRows('/ip/hotspot/user/profile/print');
     final plans = <HotspotPlan>[];
@@ -29,10 +29,8 @@ class RouterPlanRepository {
   Future<void> addPlan(HotspotPlan plan) async {
     final attrs = plan.toRouterOsAttrs();
     
-    // CRITICAL: Attach the script logic for elapsed time tracking
-    // We point every profile to our master monitor script
-    // The script will check if the profile is elapsed type and handle accordingly
-    attrs['on-login'] = '{ /system script run ${HotspotProvisioningService.monitorScriptName} }';
+    // MikroTicket always points to this specific script name
+    attrs['on-login'] = HotspotProvisioningService.monitorScriptName;
     
     await client.add('/ip/hotspot/user/profile/add', attrs);
   }
@@ -45,7 +43,7 @@ class RouterPlanRepository {
     updateAttrs.remove('name');
     
     // Ensure on-login script is attached
-    updateAttrs['on-login'] = '{ /system script run ${HotspotProvisioningService.monitorScriptName} }';
+    updateAttrs['on-login'] = HotspotProvisioningService.monitorScriptName;
     
     await client.setById(
       '/ip/hotspot/user/profile/set',

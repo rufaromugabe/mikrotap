@@ -2,8 +2,9 @@ import '../../../data/services/routeros_api_client.dart';
 
 class HotspotProvisioningService {
   static const _isolationRuleComment = 'MikroTap Isolation';
-  static const monitorScriptName = 'mt_login_monitor';
-  static const _cleanupSchedulerName = 'mt_elapsed_cleanup';
+  static const monitorScriptName = 'mkt_sp_login_8';
+  static const _coreScriptName = 'mkt_sp_core_10';
+  static const _cleanupSchedulerName = 'mkt_sc_core_user_1';
 
   static String? networkFor(String gw, int cidr) {
     if (cidr < 1 || cidr > 30) return null;
@@ -312,23 +313,19 @@ class HotspotProvisioningService {
     onProgress?.call('Creating hotspot profile…');
     final hsProfiles = await c.printRows('/ip/hotspot/profile/print');
     final existingProfile = hsProfiles.where((r) => (r['name'] ?? '') == hsProfile).toList();
+    final profileAttrs = <String, String>{
+      'hotspot-address': gateway,
+      'dns-name': (dnsName ?? '').trim().isNotEmpty ? (dnsName ?? '').trim() : 'hotspot.mikrotap.com',
+      'login-by': 'cookie,http-chap,http-pap,mac-cookie',
+      'http-cookie-lifetime': '3d',
+    };
     if (existingProfile.isEmpty) {
-      final attrs = <String, String>{
-        'name': hsProfile,
-        'hotspot-address': gateway,
-      };
-      final dn = (dnsName ?? '').trim();
-      if (dn.isNotEmpty) attrs['dns-name'] = dn;
-      await c.add('/ip/hotspot/profile/add', attrs);
+      profileAttrs['name'] = hsProfile;
+      await c.add('/ip/hotspot/profile/add', profileAttrs);
     } else {
       final id = existingProfile.first['.id'];
       if (id != null) {
-        final attrs = <String, String>{
-          'hotspot-address': gateway,
-        };
-        final dn = (dnsName ?? '').trim();
-        if (dn.isNotEmpty) attrs['dns-name'] = dn;
-        await c.setById('/ip/hotspot/profile/set', id: id, attrs: attrs);
+        await c.setById('/ip/hotspot/profile/set', id: id, attrs: profileAttrs);
       }
     }
 
@@ -449,168 +446,215 @@ class HotspotProvisioningService {
     onProgress?.call('Hotspot provisioning complete.');
   }
 
-  /// Installs RouterOS scripts for elapsed time tracking (Mikroticket-style)
+  /// Installs RouterOS scripts matching MikroTicket logic
   static Future<void> _installScripts(RouterOsApiClient c) async {
-    // 1. Install the login monitor script (stamps expiry on first login for elapsed tickets)
-    // This script runs on user login to calculate and stamp expiration time
-    // More robust: Calculate expiry immediately instead of parsing dates later
-    const monitorScriptSource = r'''
-:local user $username;
-:local comment [/ip hotspot user get [find name=$user] comment];
-:local uProfile [/ip hotspot user get [find name=$user] profile];
+    // 1. ON LOGIN SCRIPT (mkt_sp_login_8)
+    // Purpose: Stamps activation date (-da:) and MAC (-mc:) on first login.
+    // Adjusted: Removed the /tool/fetch cloud sync to avoid errors.
+    const loginScriptSource = r'''
+:local v9 [/ip hotspot user get $user];
+:local comment ($v9->"comment");
+:local v1 ([:find $comment "Mikroticket"]);
 
-# Check if we need to stamp expiration (Elapsed Mode: -k:true)
-# Only stamp if not already stamped (look for exp=)
-:if ([:find $comment "exp="] < 0) do={
-    # Check if profile has Keep Time flag (Elapsed mode)
-    :if ([:find $uProfile "-k:true"] >= 0) do={
-        # Extract Usage Time limit (-u:1h or similar) from profile name
-        :local uPos [:find $uProfile "-u:"];
-        :if ($uPos >= 0) do={
-            :local uEnd [:find $uProfile "-" ($uPos+1)];
-            :if ($uEnd < 0) do={ :set uEnd [:len $uProfile] }
-            :local limitStr [:pick $uProfile ($uPos+3) $uEnd];
-            :local limitSec [:totime $limitStr];
-            
-            # Get current time in seconds since epoch
-            :local nowSec [/system clock get time];
-            
-            # Calculate expiry: now + limit
-            :local expSec ($nowSec + $limitSec);
-            
-            # Convert expiry seconds to readable format for debugging (optional)
-            # Store as exp=SECONDS for simple comparison
-            :local newComment "$comment | exp=$expSec";
-            /ip hotspot user set [find name=$user] comment=$newComment;
-        }
-    } else={
-        # Paused mode: Just stamp start time for validity limit check
-        :local date [/system clock get date];
-        :local time [/system clock get time];
-        :local newComment "$comment | start=$date $time";
-        /ip hotspot user set [find name=$user] comment=$newComment;
-    }
-}
+# Only process if it is a Mikroticket user
+:if ([:typeof $v1] != "nil") do={
+    :local v8 ([:find $comment "-da:"]);
+    
+    # If -da: (Date Activated) is missing, this is the first login.
+    :if ([:typeof $v8] = "nil") do={
+        :local v3 [/system clock get date];
+        :local v4 [/system clock get time];
+        
+        # Stamp Activation Date (-da:) and MAC (-mc:)
+        :local v6 ($comment . "-da:" . $v3 . " " . $v4 . "-mc:" . $"mac-address");
+        [/ip hotspot user set $user comment=$v6];
+        
+        :log info ("MikroTap: Activated user " . $user);
+    };
+};
 ''';
 
-    final scriptId = await c.findId('/system/script/print', key: 'name', value: monitorScriptName);
-    if (scriptId == null) {
+    // 2. CORE MONITOR SCRIPT (mkt_sp_core_10)
+    // Purpose: Checks elapsed time and validity limits.
+    const coreScriptSource = r'''
+# Month map for date parsing
+:local v38 {"jan"="01"; "feb"="02"; "mar"="03"; "apr"="04"; "may"="05"; "jun"="06"; "jul"="07"; "aug"="08"; "sep"="09"; "oct"="10"; "nov"="11"; "dec"="12"};
+:local v22 [/system clock get time];
+:local v23 [/system clock get date];
+:local v2 [:pick $v23 0 3];
+
+# Normalize Date format to YYYY-MM-DD if using named months (jan/01/2026 -> 2026-01-01)
+:if ([:len ($v38->$v2)] > 0) do={
+    :local v61 [:pick $v23 4 6];
+    :local v54 [:pick $v23 7 11];
+    :local v48 [:pick ($v38->$v2) 0 2];
+    :set v23 ("$v54-$v48-$v61 $v22");
+};
+
+# Iterate over all ACTIVE Mikroticket users (those with -da: stamped)
+:foreach v46 in=[/ip hotspot user find where disabled=no comment~"-da:"] do={
+    :local v36 [/ip hotspot user get $v46];
+    :local v31 ($v36->"comment");
+    :local v43 ($v36->"name");
+    :local v32 ($v36->"profile");
+
+    :do {
+        # Parse Profile Flags
+        :local v13 [:pick $v32 0 [:find $v32 "-pr:"]];
+        :local v27 [:pick $v32 ([:find $v32 "-kt:"] + 4) [:find $v32 "-nu:"]]; # KeepTime (true/false)
+
+        :if ([:typeof $v27] != "nil") do={
+            :local v24 [:pick $v32 ([:find $v32 "-ut:"] + 4) [:find $v32 "-bt:"]]; # UsageTime
+
+            :if ($v24 != "null") do={
+                # Convert RouterOS time format (0d 00:00:00) to Seconds ($v6)
+                :local v6 0;
+                :if ([:typeof [:find $v24 "-"]] != "nil") do={
+                    :set v24 ([:pick $v24 0 [:find $v24 "-"]]." ".[:pick $v24 ([:find $v24 "-"] + 1) [:len $v24]]);
+                };
+                :if ([:find $v24 "d"] != 0) do={
+                    :local v55 [:pick $v24 0 [:find $v24 "d"]];
+                    :set v6 ($v55 * 86400);
+                    :set v24 [:pick $v24 ([:find $v24 "d"] + 1) [:len $v24]];
+                };
+                :local v49 [:pick $v24 0 [:find $v24 ":"]];
+                :local v18 [:pick $v24 ([:find $v24 ":"] + 1) [:len $v24]];
+                :local v39 [:pick $v18 0 [:find $v18 ":"]];
+                :local v40 [:pick $v18 ([:find $v18 ":"] + 1) [:len $v18]];
+                :set v6 ($v6 + ($v49 * 3600) + ($v39 * 60) + $v40);
+
+                # --- PAUSED MODE (kt:true) ---
+                :if ($v27 = "true") do={
+                    # Check if validity limit (-vl) exists
+                    :local v41 [:find $v32 "-vl:"];
+                    :if ([:typeof $v41] != "nil") do={
+                        :local v19 [:pick $v32 ($v41 + 4) [:len $v32]];
+                        :local v8 [:pick $v31 ([:find $v31 "-da:"] + 4) [:find $v31 "-mc:"]];
+                        
+                        # Calculate Validity Seconds ($v16)
+                        :local v16 0;
+                        :if ([:find $v19 "d"] != 0) do={
+                            :local v50 [:pick $v19 0 [:find $v19 "d"]];
+                            :set v16 ($v50 * 86400);
+                            :set v19 [:pick $v19 ([:find $v19 "d"] + 1) [:len $v19]];
+                        };
+                        :local v51 [:pick $v19 0 [:find $v19 ":"]];
+                        :local v20 [:pick $v19 ([:find $v19 ":"] + 1) [:len $v19]];
+                        :local v52 [:pick $v20 0 [:find $v20 ":"]];
+                        :local v53 [:pick $v20 ([:find $v20 ":"] + 1) [:len $v20]];
+                        :set v16 ($v16 + ($v51 * 3600) + ($v52 * 60) + $v53);
+                        
+                        # Normalize activation date format
+                        :local v34 [:pick $v8 0 3];
+                        :if ([:len ($v38->$v34)] > 0) do={
+                            :local date [:pick $v8 0 11];
+                            :local v60 [:pick $v8 12 20];
+                            :local v61 [:pick $date 4 6];
+                            :local v54 [:pick $date 7 11];
+                            :local v48 [:pick ($v38->$v34) 0 2];
+                            :set v8 ("$v54-$v48-$v61 $v60");
+                        }
+                        
+                        # Check Expiration: ActivationDate ($v8) + Validity ($v16) vs Now
+                        :local v4 [:tonum [:totime $v8]];
+                        :local v11 [:tonum [:totime "$v23 $v22"]];
+                        :local v3 ($v11 - $v4);
+                        
+                        # If expired by validity, remove user
+                        :if ($v3 > $v16) do={
+                            :log info ("MikroTap: Expired paused user (validity) " . $v43);
+                            [/ip hotspot user remove $v46];
+                            [/ip hotspot active remove [find where user=$v43]];
+                            [/ip hotspot cookie remove [find where user=$v43]];
+                        };
+                    };
+                    
+                    # Also check uptime limit (RouterOS native)
+                    :local uptimeStr ($v36->"uptime");
+                    :local uptimeSec [:totime $uptimeStr];
+                    :if ($uptimeSec > $v6) do={
+                        :log info ("MikroTap: Expired paused user (uptime) " . $v43);
+                        [/ip hotspot user remove $v46];
+                        [/ip hotspot active remove [find where user=$v43]];
+                        [/ip hotspot cookie remove [find where user=$v43]];
+                    };
+                };
+
+                # --- ELAPSED MODE (kt:false) ---
+                :if ($v27 = "false") do={
+                    :local v17 [:pick $v31 ([:find $v31 "-da:"] + 4) [:find $v31 "-mc:"]];
+                    
+                    # Parse Activation Date ($v17)
+                    :local v34 [:pick $v17 0 3];
+                    :if ([:len ($v38->$v34)] > 0) do={
+                        :local date [:pick $v17 0 11];
+                        :local v60 [:pick $v17 12 20];
+                        :local v61 [:pick $date 4 6];
+                        :local v54 [:pick $date 7 11];
+                        :local v48 [:pick ($v38->$v34) 0 2];
+                        :set v17 ("$v54-$v48-$v61 $v60");
+                    };
+                    
+                    # Calculate Elapsed: Now - Activation
+                    :local v4 [:tonum [:totime $v17]];
+                    :local v11 [:tonum [:totime "$v23 $v22"]];
+                    :local v3 ($v11 - $v4); # v3 = Seconds Elapsed since activation
+
+                    # If Elapsed > Limit ($v6), KILL.
+                    :if ($v3 > $v6) do={
+                        :log info ("MikroTap: Expired elapsed user " . $v43);
+                        [/ip hotspot user remove $v46];
+                        [/ip hotspot active remove [find where user=$v43]];
+                        [/ip hotspot cookie remove [find where user=$v43]];
+                    };
+                };
+            };
+        };
+    } on-error={ :log warning "MikroTap Core Script Error"; };
+};
+''';
+
+    // Install Login Script
+    final loginScriptId = await c.findId('/system/script/print', key: 'name', value: monitorScriptName);
+    if (loginScriptId == null) {
       await c.add('/system/script/add', {
         'name': monitorScriptName,
-        'source': monitorScriptSource,
+        'source': loginScriptSource,
         'policy': 'read,write,policy,test',
       });
     } else {
-      // Update existing script
-      await c.setById('/system/script/set', id: scriptId, attrs: {
-        'source': monitorScriptSource,
-        'policy': 'read,write,policy,test',
+      await c.setById('/system/script/set', id: loginScriptId, attrs: {
+        'source': loginScriptSource,
       });
     }
 
-    // 2. Install a Scheduler to clean up expired users (Mikroticket-style)
-    // This runs every 3 minutes to check and remove expired users
-    // Uses simplified logic: compare stored expiry seconds vs current time
-    const cleanupSource = r'''
-:local nowSec [/system clock get time];
+    // Install Core Monitor Script
+    final coreScriptId = await c.findId('/system/script/print', key: 'name', value: _coreScriptName);
+    if (coreScriptId == null) {
+      await c.add('/system/script/add', {
+        'name': _coreScriptName,
+        'source': coreScriptSource,
+        'policy': 'read,write,policy,test',
+      });
+    } else {
+      await c.setById('/system/script/set', id: coreScriptId, attrs: {
+        'source': coreScriptSource,
+      });
+    }
 
-# Loop through all users with expiration or start time in comment
-:foreach user in=[/ip hotspot user find where comment~"exp=" or comment~"start="] do={
-  :local uData [/ip hotspot user get $user];
-  :local profileName ($uData->"profile");
-  :local comment ($uData->"comment");
-  
-  # Skip if profile doesn't have our flags
-  :if ([:find $profileName "-u:"] >= 0) do={
-    # 1. PARSE PROFILE FLAGS
-    # Find -k: (Keep Time) - always present in our profiles
-    :local kPos [:find $profileName "-k:"];
-    :local kEnd [:find $profileName "-" ($kPos+1)];
-    :if ($kEnd < 0) do={ :set kEnd [:len $profileName] }
-    :local keepTime [:pick $profileName ($kPos+3) $kEnd];
-    
-    # Find -u: (Usage Time limit)
-    :local uPos [:find $profileName "-u:"];
-    :local uEnd [:find $profileName "-" ($uPos+1)];
-    :if ($uEnd < 0) do={ :set uEnd [:len $profileName] }
-    :local limitStr [:pick $profileName ($uPos+3) $uEnd];
-    :local limitSec [:totime $limitStr];
-    
-    # Find -l: (Validity Limit for paused mode)
-    :local lPos [:find $profileName "-l:"];
-    :local validitySec 0;
-    :if ($lPos >= 0) do={
-      :local lEnd [:find $profileName "-" ($lPos+1)];
-      :if ($lEnd < 0) do={ :set lEnd [:len $profileName] }
-      :local lStr [:pick $profileName ($lPos+3) $lEnd];
-      :set validitySec [:totime $lStr];
-    }
-    
-    # 2. LOGIC: Check expiration
-    :local shouldExpire false;
-    
-    :if ($keepTime = "true") do={
-      # --- ELAPSED MODE ---
-      # Check stored expiry (exp=SECONDS format)
-      :local expPos [:find $comment "exp="];
-      :if ($expPos >= 0) do={
-        :local expStr [:pick $comment ($expPos+4)];
-        # Extract expiry seconds (stop at space or end)
-        :local spacePos [:find $expStr " "];
-        :if ($spacePos >= 0) do={
-          :set expStr [:pick $expStr 0 $spacePos]
-        }
-        :local expSec [:tonum $expStr];
-        # Compare: if now >= expiry, expire
-        :if ($nowSec >= $expSec) do={
-          :set shouldExpire true;
-        }
-      }
-    } else={
-      # --- PAUSED MODE ---
-      # Check uptime limit (RouterOS native)
-      :local uptimeStr ($uData->"uptime");
-      :local uptimeSec [:totime $uptimeStr];
-      :if ($uptimeSec > $limitSec) do={
-        :set shouldExpire true;
-      }
-      # Also check validity limit using start time
-      :if ($validitySec > 0) do={
-        :local startPos [:find $comment "start="];
-        :if ($startPos >= 0) do={
-          # For paused mode validity, we use a simpler approach:
-          # Check if user has been active for more than validity limit
-          # Since we can't easily parse dates, we rely on RouterOS uptime + a safety margin
-          # OR: Set limit-uptime to validity limit as a failsafe
-          # For now, skip complex date parsing for paused validity
-        }
-      }
-    }
-    
-    # 3. ACTION: Remove expired user
-    :if ($shouldExpire) do={
-      # Remove active sessions first
-      /ip hotspot active remove [find user=$user];
-      # Delete the user
-      /ip hotspot user remove $user;
-    }
-  }
-}
-''';
-
-    // Install scheduler to run cleanup every 3 minutes (Mikroticket standard)
-    final schedulerId = await c.findId('/system/scheduler/print', key: 'name', value: _cleanupSchedulerName);
-    if (schedulerId == null) {
+    // Install Scheduler
+    final schedId = await c.findId('/system/scheduler/print', key: 'name', value: _cleanupSchedulerName);
+    if (schedId == null) {
       await c.add('/system/scheduler/add', {
         'name': _cleanupSchedulerName,
-        'start-time': 'startup',
         'interval': '3m',
-        'on-event': cleanupSource,
+        'on-event': _coreScriptName,
+        'start-time': 'startup',
       });
     } else {
-      await c.setById('/system/scheduler/set', id: schedulerId, attrs: {
+      await c.setById('/system/scheduler/set', id: schedId, attrs: {
         'interval': '3m',
-        'on-event': cleanupSource,
+        'on-event': _coreScriptName,
       });
     }
   }

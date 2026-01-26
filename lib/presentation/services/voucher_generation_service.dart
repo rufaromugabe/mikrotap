@@ -39,14 +39,24 @@ class VoucherGenerationService {
       }
     }
 
-    // Format date for comment: YYYYMMDDHHmmss
+    // Format date: YYYY-MM-DD HH:MM:SS (MikroTicket format)
     String formatDate(DateTime d) {
       String two(int n) => n.toString().padLeft(2, '0');
-      return '${d.year}${two(d.month)}${two(d.day)}${two(d.hour)}${two(d.minute)}${two(d.second)}';
+      return '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}:${two(d.second)}';
     }
 
     final soldAt = DateTime.now();
-    final operatorName = operator?.displayName ?? operator?.email ?? 'System';
+    if (operator == null) {
+      throw ArgumentError('Operator is required for voucher generation');
+    }
+    final displayName = operator.displayName;
+    final email = operator.email;
+    if ((displayName == null || displayName.isEmpty) && (email == null || email.isEmpty)) {
+      throw ArgumentError('Operator must have displayName or email');
+    }
+    final operatorName = (displayName != null && displayName.isNotEmpty) 
+        ? displayName 
+        : email!;
 
     // Convert data limit from MB to bytes
     final dataLimitBytes = plan.dataLimitMb > 0 ? (plan.dataLimitMb * 1024 * 1024) : null;
@@ -69,13 +79,12 @@ class VoucherGenerationService {
         password = generateToken(plan.passLen);
       }
 
-      // Build comment: MT|b:<Batch>|p:<Price>|d:<Date>|by:<Operator>
-      final commentParts = <String>['MT'];
-      commentParts.add('b:$batchId');
-      commentParts.add('p:${plan.price}');
-      commentParts.add('d:${formatDate(soldAt)}');
-      commentParts.add('by:$operatorName');
-      final comment = commentParts.join('|');
+      // Comment Format: "Mikroticket-dc:2026-01-26 17:29:04-ot:4"
+      // -dc: Date Created
+      // -ot: Operator Type/ID (We put the operator name or ID here)
+      // The script will append -da: (Date Activated) and -mc: (MAC) on login.
+      final dateStr = formatDate(soldAt);
+      final comment = 'Mikroticket-dc:$dateStr-ot:$operatorName';
 
       // Build RouterOS user attributes
       final attrs = <String, String>{
@@ -85,19 +94,35 @@ class VoucherGenerationService {
         'comment': comment,
       };
 
-      // HANDLING TIME TYPES
+      // CRITICAL: Handling Time Limits based on MikroTicket Logic
+      // The script handles the actual cutoff, BUT we should set defaults for safety.
+      
       if (plan.timeType == TicketType.paused) {
-        // Paused: Set hard limit on the user. RouterOS counts down only when active.
-        if (plan.validity.isNotEmpty) {
-          attrs['limit-uptime'] = plan.validity;
+        // Paused Mode (kt:true): 
+        // We MUST set limit-uptime so RouterOS handles the actual disconnects.
+        // The script mainly handles the 'Validity Limit' check.
+        // Convert validity to RouterOS format (e.g., "1h" -> "0d 01:00:00")
+        String limitUptime;
+        if (plan.validity.endsWith('h')) {
+          final h = int.parse(plan.validity.replaceAll('h', ''));
+          limitUptime = '0d ${h.toString().padLeft(2, '0')}:00:00';
+        } else if (plan.validity.endsWith('d')) {
+          final d = int.parse(plan.validity.replaceAll('d', ''));
+          limitUptime = '${d}d 00:00:00';
+        } else if (plan.validity.endsWith('m')) {
+          final m = int.parse(plan.validity.replaceAll('m', ''));
+          final h = m ~/ 60;
+          final rm = m % 60;
+          limitUptime = '0d ${h.toString().padLeft(2, '0')}:${rm.toString().padLeft(2, '0')}:00';
+        } else {
+          throw ArgumentError('Invalid validity format: ${plan.validity}');
         }
+        attrs['limit-uptime'] = limitUptime;
       } else {
-        // Elapsed: Do NOT set limit-uptime yet, OR set it as a failsafe.
-        // If we set limit-uptime here, RouterOS treats it as Paused time.
-        // We leave it empty. The 'on-login' script will mark the start time.
-        // The Scheduler will enforce the end time.
-        // Optionally set a very high failsafe limit-uptime to prevent abuse
-        // but the script-based elapsed tracking is the primary mechanism
+        // Elapsed Mode (kt:false):
+        // We DO NOT set limit-uptime. 
+        // If we did, RouterOS would pause the timer on logout.
+        // The script calculates (Now - ActivationDate) > UsageTime and removes the user.
       }
 
       // HANDLING DATA LIMITS (Always Paused/Cumulative)
