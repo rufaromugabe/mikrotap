@@ -70,6 +70,7 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
     int _passLen = 6;
     Charset _charset = Charset.numeric;
     String _validity = '1h';
+    TicketType _timeType = TicketType.paused;
 
     final validityOptions = ['1h', '12h', '1d', '7d', '30d'];
 
@@ -110,6 +111,7 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
           charset: _charset,
           rateLimit: rateLimit,
           sharedUsers: shared,
+          timeType: _timeType,
         );
 
         await repo.addPlan(plan);
@@ -172,6 +174,25 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
                           });
                         }
                       },
+                    ),
+                    const SizedBox(height: 10),
+                    const Text('Type of ticket duration', style: TextStyle(fontWeight: FontWeight.bold)),
+                    Row(
+                      children: [
+                        Radio<TicketType>(
+                          value: TicketType.elapsed,
+                          groupValue: _timeType,
+                          onChanged: (v) => setDialogState(() => _timeType = v!),
+                        ),
+                        const Text('Elapsed time'),
+                        const SizedBox(width: 20),
+                        Radio<TicketType>(
+                          value: TicketType.paused,
+                          groupValue: _timeType,
+                          onChanged: (v) => setDialogState(() => _timeType = v!),
+                        ),
+                        const Text('Paused time'),
+                      ],
                     ),
                     const SizedBox(height: 10),
                     TextField(
@@ -351,6 +372,7 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
     int _passLen = plan.passLen;
     Charset _charset = plan.charset;
     String _validity = plan.validity;
+    TicketType _timeType = plan.timeType;
 
     final validityOptions = ['1h', '12h', '1d', '7d', '30d'];
 
@@ -390,6 +412,7 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
           charset: _charset,
           rateLimit: rateLimit,
           sharedUsers: shared,
+          timeType: _timeType,
         );
 
         await repo.updatePlan(updatedPlan);
@@ -449,6 +472,25 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
                           setDialogState(() => _validity = v);
                         }
                       },
+                    ),
+                    const SizedBox(height: 10),
+                    const Text('Type of ticket duration', style: TextStyle(fontWeight: FontWeight.bold)),
+                    Row(
+                      children: [
+                        Radio<TicketType>(
+                          value: TicketType.elapsed,
+                          groupValue: _timeType,
+                          onChanged: (v) => setDialogState(() => _timeType = v!),
+                        ),
+                        const Text('Elapsed time'),
+                        const SizedBox(width: 20),
+                        Radio<TicketType>(
+                          value: TicketType.paused,
+                          groupValue: _timeType,
+                          onChanged: (v) => setDialogState(() => _timeType = v!),
+                        ),
+                        const Text('Paused time'),
+                      ],
                     ),
                     const SizedBox(height: 10),
                     TextField(

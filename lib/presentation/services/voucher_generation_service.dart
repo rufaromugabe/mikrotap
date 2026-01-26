@@ -85,12 +85,22 @@ class VoucherGenerationService {
         'comment': comment,
       };
 
-      // Add limit-uptime (validity)
-      if (plan.validity.isNotEmpty) {
-        attrs['limit-uptime'] = plan.validity;
+      // HANDLING TIME TYPES
+      if (plan.timeType == TicketType.paused) {
+        // Paused: Set hard limit on the user. RouterOS counts down only when active.
+        if (plan.validity.isNotEmpty) {
+          attrs['limit-uptime'] = plan.validity;
+        }
+      } else {
+        // Elapsed: Do NOT set limit-uptime yet, OR set it as a failsafe.
+        // If we set limit-uptime here, RouterOS treats it as Paused time.
+        // We leave it empty. The 'on-login' script will mark the start time.
+        // The Scheduler will enforce the end time.
+        // Optionally set a very high failsafe limit-uptime to prevent abuse
+        // but the script-based elapsed tracking is the primary mechanism
       }
 
-      // Add data limit (limit-bytes-total)
+      // HANDLING DATA LIMITS (Always Paused/Cumulative)
       if (dataLimitBytes != null) {
         attrs['limit-bytes-total'] = '$dataLimitBytes';
       }

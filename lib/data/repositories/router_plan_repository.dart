@@ -1,5 +1,6 @@
 import '../models/hotspot_plan.dart';
 import '../services/routeros_api_client.dart';
+import '../../presentation/services/hotspot_provisioning_service.dart';
 
 class RouterPlanRepository {
   RouterPlanRepository({
@@ -27,6 +28,12 @@ class RouterPlanRepository {
   /// Adds a new plan to the router
   Future<void> addPlan(HotspotPlan plan) async {
     final attrs = plan.toRouterOsAttrs();
+    
+    // CRITICAL: Attach the script logic for elapsed time tracking
+    // We point every profile to our master monitor script
+    // The script will check if the profile is elapsed type and handle accordingly
+    attrs['on-login'] = '{ /system script run ${HotspotProvisioningService.monitorScriptName} }';
+    
     await client.add('/ip/hotspot/user/profile/add', attrs);
   }
 
@@ -36,6 +43,9 @@ class RouterPlanRepository {
     // Remove 'name' from attrs for update (name changes require delete+add)
     final updateAttrs = Map<String, String>.from(attrs);
     updateAttrs.remove('name');
+    
+    // Ensure on-login script is attached
+    updateAttrs['on-login'] = '{ /system script run ${HotspotProvisioningService.monitorScriptName} }';
     
     await client.setById(
       '/ip/hotspot/user/profile/set',

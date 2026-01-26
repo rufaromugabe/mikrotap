@@ -2,6 +2,8 @@ enum TicketMode { userPass, pin }
 
 enum Charset { numeric, alphanumeric }
 
+enum TicketType { paused, elapsed }
+
 class HotspotPlan {
   const HotspotPlan({
     required this.id,
@@ -15,6 +17,7 @@ class HotspotPlan {
     required this.charset,
     required this.rateLimit,
     required this.sharedUsers,
+    required this.timeType,
   });
 
   final String id; // RouterOS internal ID (.id)
@@ -28,15 +31,17 @@ class HotspotPlan {
   final Charset charset;
   final String rateLimit; // "5M/5M"
   final int sharedUsers;
+  final TicketType timeType; // paused or elapsed
 
   /// Generates the RouterOS profile name with encoded metadata
-  /// Format: MT_<Name>_p:<price>_v:<validity>_d:<dataLimit>_m:<mode>_l:<lengths>_c:<charset>
+  /// Format: MT_<Name>_p:<price>_v:<validity>_d:<dataLimit>_m:<mode>_l:<lengths>_c:<charset>_t:<timeType>
   String get routerOsProfileName {
     final modeStr = mode == TicketMode.pin ? 'pin' : 'up';
     final charsetStr = charset == Charset.numeric ? 'num' : 'mix';
     final lengthsStr = mode == TicketMode.pin ? '$userLen' : '$userLen,$passLen';
+    final typeStr = timeType == TicketType.elapsed ? 'el' : 'pa';
     
-    return 'MT_${name}_p:${price}_v:${validity}_d:${dataLimitMb}_m:${modeStr}_l:${lengthsStr}_c:${charsetStr}';
+    return 'MT_${name}_p:${price}_v:${validity}_d:${dataLimitMb}_m:${modeStr}_l:${lengthsStr}_c:${charsetStr}_t:${typeStr}';
   }
 
   /// Parses a RouterOS profile row into a HotspotPlan
@@ -47,7 +52,7 @@ class HotspotPlan {
 
     try {
       // Extract the base name and config hash
-      // Format: MT_<Name>_p:<price>_v:<validity>_d:<dataLimit>_m:<mode>_l:<lengths>_c:<charset>
+      // Format: MT_<Name>_p:<price>_v:<validity>_d:<dataLimit>_m:<mode>_l:<lengths>_c:<charset>_t:<timeType>
       final parts = name.substring(3).split('_'); // Remove "MT_" prefix
       if (parts.isEmpty) return null;
 
@@ -65,7 +70,7 @@ class HotspotPlan {
       // Reconstruct name (everything before config)
       final displayName = parts.sublist(0, configStartIndex).join('_');
       
-      // Parse config hash: p:<price>_v:<validity>_d:<dataLimit>_m:<mode>_l:<lengths>_c:<charset>
+      // Parse config hash: p:<price>_v:<validity>_d:<dataLimit>_m:<mode>_l:<lengths>_c:<charset>_t:<timeType>
       final configParts = parts.sublist(configStartIndex).join('_');
       
       // Parse individual config fields
@@ -114,6 +119,12 @@ class HotspotPlan {
         charset = charsetMatch.group(1) == 'num' ? Charset.numeric : Charset.alphanumeric;
       }
 
+      // Parse time type (default to paused for backward compatibility)
+      final typeMatch = RegExp(r't:(pa|el)').firstMatch(configParts);
+      final timeType = typeMatch != null && typeMatch.group(1) == 'el' 
+          ? TicketType.elapsed 
+          : TicketType.paused;
+
       // Validate required fields
       if (price == null || validity == null || mode == null || userLen == null || passLen == null || charset == null) {
         return null;
@@ -136,6 +147,7 @@ class HotspotPlan {
         charset: charset,
         rateLimit: rateLimit,
         sharedUsers: sharedUsers,
+        timeType: timeType,
       );
     } catch (e) {
       // Parsing failed, return null
@@ -164,6 +176,7 @@ class HotspotPlan {
     Charset? charset,
     String? rateLimit,
     int? sharedUsers,
+    TicketType? timeType,
   }) {
     return HotspotPlan(
       id: id ?? this.id,
@@ -177,6 +190,7 @@ class HotspotPlan {
       charset: charset ?? this.charset,
       rateLimit: rateLimit ?? this.rateLimit,
       sharedUsers: sharedUsers ?? this.sharedUsers,
+      timeType: timeType ?? this.timeType,
     );
   }
 }
