@@ -4,8 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../data/models/voucher.dart';
 import '../../providers/voucher_providers.dart';
-import '../../services/voucher_usage_sync_service.dart';
-import '../../../data/services/routeros_api_client.dart';
+import '../../providers/active_router_provider.dart';
 import '../routers/router_home_screen.dart';
 import 'generate_vouchers_screen.dart';
 import 'print_vouchers_screen.dart';
@@ -53,8 +52,7 @@ class _VouchersBodyState extends ConsumerState<_VouchersBody> {
   @override
   Widget build(BuildContext context) {
     final args = widget.args;
-    final routerId = args.routerId;
-    final vouchers = ref.watch(vouchersProvider(routerId));
+    final vouchers = ref.watch(vouchersProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -72,46 +70,24 @@ class _VouchersBodyState extends ConsumerState<_VouchersBody> {
         ),
         actions: [
           IconButton(
-            tooltip: 'Sync usage',
-            onPressed: () async {
-              final items = ref.read(vouchersProvider(routerId)).maybeWhen(
-                    data: (d) => d,
-                    orElse: () => null,
-                  );
-              if (items == null) return;
-
-              final client = RouterOsApiClient(host: args.host, port: 8728);
-              try {
-                await client.login(username: args.username, password: args.password);
-                final updated = await VoucherUsageSyncService.sync(
-                  client: client,
-                  repo: ref.read(voucherRepositoryProvider),
-                  routerId: routerId,
-                  vouchers: items,
+            tooltip: 'Refresh vouchers',
+            onPressed: () {
+              // Refresh the vouchers provider
+              ref.invalidate(vouchersProvider);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Refreshing vouchers...')),
                 );
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Synced. Updated $updated vouchers.')),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Sync failed: $e')),
-                  );
-                }
-              } finally {
-                await client.close();
               }
             },
-            icon: const Icon(Icons.sync),
+            icon: const Icon(Icons.refresh),
           ),
           FilledButton.icon(
             onPressed: () {
               context.push(
                 GenerateVouchersScreen.routePath,
                 extra: GenerateVouchersArgs(
-                  routerId: routerId,
+                  routerId: args.routerId,
                   host: args.host,
                   username: args.username,
                   password: args.password,
@@ -127,7 +103,7 @@ class _VouchersBodyState extends ConsumerState<_VouchersBody> {
               context.push(
                 PrintVouchersScreen.routePath,
                 extra: PrintVouchersArgs(
-                  routerId: routerId,
+                  routerId: args.routerId,
                   filter: switch (_filter) {
                     _VoucherUsageFilter.all => VoucherPrintFilter.all,
                     _VoucherUsageFilter.inUse => VoucherPrintFilter.inUse,
@@ -218,9 +194,32 @@ class _VouchersBodyState extends ConsumerState<_VouchersBody> {
                             tooltip: 'Delete',
                             icon: const Icon(Icons.delete_outline),
                             onPressed: () async {
-                              await ref
-                                  .read(voucherRepositoryProvider)
-                                  .deleteVoucher(routerId: v.routerId, voucherId: v.id);
+                              final repo = ref.read(routerVoucherRepoProvider);
+                              final session = ref.read(activeRouterProvider);
+                              if (session == null) return;
+                              
+                              try {
+                                await repo.client.login(
+                                  username: session.username,
+                                  password: session.password,
+                                );
+                                await repo.deleteVoucher(v.id);
+                                // Refresh the list
+                                ref.invalidate(vouchersProvider);
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Voucher deleted')),
+                                  );
+                                }
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Delete failed: $e')),
+                                  );
+                                }
+                              } finally {
+                                repo.client.close();
+                              }
                             },
                           ),
                         ),

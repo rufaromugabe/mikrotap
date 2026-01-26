@@ -28,7 +28,7 @@ class PrintVouchersScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final vouchers = ref.watch(vouchersProvider(args.routerId));
+    final vouchers = ref.watch(vouchersProviderFamily(args.routerId));
 
     return Scaffold(
       appBar: AppBar(

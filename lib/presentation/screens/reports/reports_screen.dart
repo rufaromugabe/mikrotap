@@ -53,7 +53,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             final allVouchers = <Voucher>[];
 
             for (final router in routers) {
-              final vAsync = ref.watch(vouchersProvider(router.id));
+              final vAsync = ref.watch(vouchersProviderFamily(router.id));
               perRouterWidgets.add(
                 vAsync.when(
                   data: (vs) {

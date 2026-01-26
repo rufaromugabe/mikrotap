@@ -107,7 +107,7 @@ class _RouterHomeScreenState extends ConsumerState<RouterHomeScreen> {
     }
 
     final activeUsers = ref.watch(activeHotspotUsersCountProvider);
-    final vouchers = ref.watch(vouchersProvider(session.routerId));
+    final vouchers = ref.watch(vouchersProviderFamily(session.routerId));
     final revenueToday = vouchers.maybeWhen(
       data: (items) {
         final now = DateTime.now();
