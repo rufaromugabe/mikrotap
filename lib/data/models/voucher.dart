@@ -163,13 +163,24 @@ class Voucher {
       String? soldByName;
 
       // Exact MikroTicket Regex Parsing
-      final dc = RegExp(r'-dc:([^-]+)').firstMatch(comment)?.group(1)?.trim();
-      final da = RegExp(r'-da:([^-]+)').firstMatch(comment)?.group(1)?.trim();
-      final ot = RegExp(r'-ot:([^-]+)').firstMatch(comment)?.group(1)?.trim();
+      // Match until next tag (-ot:, -da:, -mc:) or end of string
+      // Use non-greedy match to stop at the next tag pattern
+      final dc = RegExp(r'-dc:(.*?)(?=-[a-z]+:|$)').firstMatch(comment)?.group(1)?.trim();
+      final da = RegExp(r'-da:(.*?)(?=-[a-z]+:|$)').firstMatch(comment)?.group(1)?.trim();
+      final ot = RegExp(r'-ot:(.*?)(?=-[a-z]+:|$)').firstMatch(comment)?.group(1)?.trim();
 
       // Parse Date Created
+      // Support both legacy format (with space) and ISO 8601 format (with T)
       if (dc != null) {
-        createdAt = DateTime.tryParse(dc);
+        // Try parsing legacy format with space first
+        if (dc.contains(' ')) {
+          // Replace space with T to convert to ISO 8601 format for parsing
+          createdAt = DateTime.tryParse(dc.replaceFirst(' ', 'T'));
+        }
+        // If no space or parsing failed, try as-is (ISO 8601 format)
+        if (createdAt == null) {
+          createdAt = DateTime.tryParse(dc);
+        }
       }
 
       // Parse Date Activated (script adds this on login)
