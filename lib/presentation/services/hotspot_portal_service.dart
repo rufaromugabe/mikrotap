@@ -244,7 +244,7 @@ class HotspotPortalService {
           function handleInput() {
             var value = usernameInput.value.trim();
             // Check if it looks like a PIN (numeric, 4-8 digits)
-            if (/^\d{4,8}$/.test(value)) {
+            if (value.length >= 4 && value.length <= 8 && !isNaN(value)) {
               // PIN mode: fill both username and password with the PIN
               passwordInput.value = value;
               passwordInput.style.display = 'none';

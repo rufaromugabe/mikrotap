@@ -208,13 +208,13 @@ class HotspotProvisioningService {
             rethrow;
           }
         }
-      } else {
-        throw RouterOsApiException(
+        } else {
+          throw RouterOsApiException(
           'Selected guest ports belong to multiple bridges (${bridgesInUse.join(', ')}). '
           'For safety, MikroTap won’t move ports automatically. '
           'Please select ports from one LAN bridge only.',
         );
-      }
+      }}
     }
     if (accessInterface.isEmpty) {
       throw const RouterOsApiException('Missing access interface.');

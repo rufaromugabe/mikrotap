@@ -9,11 +9,7 @@ import '../../../data/services/routeros_api_client.dart';
 import '../../services/hotspot_portal_service.dart';
 import '../../services/hotspot_profile_service.dart';
 import '../../services/hotspot_provisioning_service.dart';
-import '../../services/voucher_generation_service.dart';
 import '../../providers/active_router_provider.dart';
-import '../../providers/auth_providers.dart';
-import '../../providers/voucher_providers.dart';
-import '../vouchers/print_vouchers_screen.dart';
 import 'router_home_screen.dart';
 import 'router_reboot_wait_screen.dart';
 
@@ -586,11 +582,12 @@ class _RouterInitializationScreenState extends ConsumerState<RouterInitializatio
       return;
     }
 
-    final profile = (_createdPlanName ?? '').trim().isEmpty ? 'mikrotap' : _createdPlanName!.trim();
-    final uptime = _planDurationCtrl.text.trim().isEmpty ? '1h' : _planDurationCtrl.text.trim();
-    final prefix = _ticketsPrefixCtrl.text.trim();
-    final price = num.tryParse(_planPriceCtrl.text.trim());
-    final seller = ref.read(authStateProvider).maybeWhen(data: (u) => u, orElse: () => null);
+    // TODO: These variables will be used when voucher generation is implemented
+    // final profile = (_createdPlanName ?? '').trim().isEmpty ? 'mikrotap' : _createdPlanName!.trim();
+    // final uptime = _planDurationCtrl.text.trim().isEmpty ? '1h' : _planDurationCtrl.text.trim();
+    // final prefix = _ticketsPrefixCtrl.text.trim();
+    // final price = num.tryParse(_planPriceCtrl.text.trim());
+    // final seller = ref.read(authStateProvider).maybeWhen(data: (u) => u, orElse: () => null);
 
     setState(() => _status = null);
 
@@ -601,7 +598,6 @@ class _RouterInitializationScreenState extends ConsumerState<RouterInitializatio
       setState(() => _status = 'Please use the Vouchers > Generate screen to create vouchers with a plan.');
     }
     // TODO: Update wizard to create plan and generate vouchers using new API
-    }
   }
 
   @override
@@ -1071,13 +1067,13 @@ class _RouterInitializationScreenState extends ConsumerState<RouterInitializatio
     );
   }
 
-  static String _serviceSummary(Map<String, String> r) {
+  String _serviceSummary(Map<String, String> r) {
     final disabled = r['disabled'] == 'true';
     final port = r['port'];
     return '${disabled ? 'disabled' : 'enabled'}${port != null ? ' • port $port' : ''}';
   }
 
-  static Widget _kv(String k, String? v) {
+  Widget _kv(String k, String? v) {
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Row(
