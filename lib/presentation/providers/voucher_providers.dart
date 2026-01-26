@@ -80,11 +80,4 @@ final vouchersProviderFamily = FutureProvider.autoDispose.family<List<Voucher>, 
   }
 });
 
-/// Legacy provider for backward compatibility (used by VoucherUsageSyncService)
-/// Note: With Router-as-Database, we don't need to sync to a local DB anymore
-/// This is kept for code that still references it, but it won't actually persist anything
-@Deprecated('Router-as-Database: vouchers are stored on router, not in local DB')
-final voucherRepositoryProvider = Provider<RouterVoucherRepository>((ref) {
-  return ref.watch(routerVoucherRepoProvider);
-});
 

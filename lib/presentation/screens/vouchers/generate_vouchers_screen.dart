@@ -85,7 +85,7 @@ class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen>
       return;
     }
 
-    final quantity = int.tryParse(_quantityCtrl.text) ?? 0;
+    final quantity = int.parse(_quantityCtrl.text);
     if (quantity <= 0 || quantity > 500) {
       setState(() => _status = 'Quantity must be 1..500');
       return;

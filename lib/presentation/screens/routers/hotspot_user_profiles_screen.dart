@@ -74,18 +74,18 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
 
     Future<void> submit() async {
       final name = nameCtrl.text.trim();
-      final price = double.tryParse(priceCtrl.text.trim()) ?? 0;
-      final dataLimit = int.tryParse(dataLimitCtrl.text.trim()) ?? 0;
-      final down = num.tryParse(downCtrl.text.trim());
-      final up = num.tryParse(upCtrl.text.trim());
-      final shared = int.tryParse(sharedCtrl.text.trim()) ?? 1;
-
       if (name.isEmpty) {
         setState(() => _status = 'Plan name required.');
         return;
       }
+      
+      final price = double.parse(priceCtrl.text.trim());
+      final dataLimit = int.parse(dataLimitCtrl.text.trim());
+      final down = num.tryParse(downCtrl.text.trim());
+      final up = num.tryParse(upCtrl.text.trim());
+      final shared = int.parse(sharedCtrl.text.trim());
 
-      final rateLimit = (down != null && up != null && down > 0 && up > 0) ? '${down}M/${up}M' : '5M/5M';
+      final rateLimit = (down != null && up != null && down > 0 && up > 0) ? '${down}M/${up}M' : throw ArgumentError('Rate limit required');
 
       setState(() {
         _loading = true;
@@ -375,18 +375,18 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
 
     Future<void> submit() async {
       final name = nameCtrl.text.trim();
-      final price = double.tryParse(priceCtrl.text.trim()) ?? 0;
-      final dataLimit = int.tryParse(dataLimitCtrl.text.trim()) ?? 0;
-      final down = num.tryParse(downCtrl.text.trim());
-      final up = num.tryParse(upCtrl.text.trim());
-      final shared = int.tryParse(sharedCtrl.text.trim()) ?? 1;
-
       if (name.isEmpty) {
         setState(() => _status = 'Plan name required.');
         return;
       }
+      
+      final price = double.parse(priceCtrl.text.trim());
+      final dataLimit = int.parse(dataLimitCtrl.text.trim());
+      final down = num.tryParse(downCtrl.text.trim());
+      final up = num.tryParse(upCtrl.text.trim());
+      final shared = int.parse(sharedCtrl.text.trim());
 
-      final rateLimit = (down != null && up != null && down > 0 && up > 0) ? '${down}M/${up}M' : plan.rateLimit;
+      final rateLimit = (down != null && up != null && down > 0 && up > 0) ? '${down}M/${up}M' : throw ArgumentError('Rate limit required');
 
       setState(() {
         _loading = true;

@@ -35,21 +35,26 @@ class HotspotPlan {
 
   /// Generates the RouterOS profile name with encoded metadata
   /// Format: MT_<Name>_p:<price>_v:<validity>_d:<dataLimit>_m:<mode>_l:<lengths>_c:<charset>_t:<timeType>
-  /// Also includes Mikroticket-style flags: -ut:<usageTime> -kt:<keepTime> -vl:<validityLimit>
+  /// Also includes Mikroticket-style flags: -u:<usageTime> -k:<keepTime> -l:<validityLimit>
+  /// (Shortened keys to avoid RouterOS profile name length limits)
   String get routerOsProfileName {
     final modeStr = mode == TicketMode.pin ? 'pin' : 'up';
     final charsetStr = charset == Charset.numeric ? 'num' : 'mix';
     final lengthsStr = mode == TicketMode.pin ? '$userLen' : '$userLen,$passLen';
     final typeStr = timeType == TicketType.elapsed ? 'el' : 'pa';
     
-    // Base format with our tokens
-    final base = 'MT_${name}_p:${price}_v:${validity}_d:${dataLimitMb}_m:${modeStr}_l:${lengthsStr}_c:${charsetStr}_t:${typeStr}';
+    // Truncate name if too long to avoid RouterOS profile name length limits
+    final safeName = name.length > 10 ? name.substring(0, 10) : name;
     
-    // Add Mikroticket-style flags for script compatibility
-    // -ut: Usage Time limit (same as validity)
-    // -kt: Keep Time (false = elapsed, true = paused)
-    // -vl: Validity Limit (for paused mode, ensures ticket expires even if not used)
-    final keepTime = timeType == TicketType.paused ? 'true' : 'false';
+    // Base format with our tokens
+    final base = 'MT_${safeName}_p:${price}_v:${validity}_d:${dataLimitMb}_m:${modeStr}_l:${lengthsStr}_c:${charsetStr}_t:${typeStr}';
+    
+    // Add Mikroticket-style flags for script compatibility (shortened keys)
+    // -u: Usage Time limit (same as validity) - shortened from -ut:
+    // -k: Keep Time (true = elapsed/keeps running, false = paused/stops on logout) - shortened from -kt:
+    // -l: Validity Limit (for paused mode, ensures ticket expires even if not used) - shortened from -vl:
+    // Standard MikroTicket Logic: elapsed → k:true (Time keeps running), paused → k:false (Time stops on logout)
+    final keepTime = timeType == TicketType.elapsed ? 'true' : 'false';
     
     // Convert validity to RouterOS time format (e.g., "1h" -> "0d 01:00:00", "30d" -> "30d 00:00:00")
     String formatRouterOsTime(String v) {
@@ -69,7 +74,7 @@ class HotspotPlan {
     }
     
     final utValue = formatRouterOsTime(validity);
-    final result = '$base-ut:$utValue-kt:$keepTime';
+    final result = '$base-u:$utValue-k:$keepTime';
     
     // For paused mode, add validity limit (typically 2-3x the usage time to prevent abuse)
     if (timeType == TicketType.paused) {
@@ -88,7 +93,7 @@ class HotspotPlan {
       } else {
         throw ArgumentError('Invalid validity format for paused mode: $validity');
       }
-      return '$result-vl:$validityLimit';
+      return '$result-l:$validityLimit';
     }
     
     return result;
@@ -132,65 +137,57 @@ class HotspotPlan {
       int? passLen;
       Charset? charset;
 
-      // Use regex to extract values
+      // Use regex to extract values (all required)
       final priceMatch = RegExp(r'p:([\d\.]+)').firstMatch(configParts);
-      if (priceMatch != null) {
-        price = double.tryParse(priceMatch.group(1)!);
-      }
+      if (priceMatch == null) return null;
+      price = double.parse(priceMatch.group(1)!);
 
       final validityMatch = RegExp(r'v:([\w]+)').firstMatch(configParts);
-      if (validityMatch != null) {
-        validity = validityMatch.group(1);
-      }
+      if (validityMatch == null) return null;
+      validity = validityMatch.group(1)!;
 
       final dataMatch = RegExp(r'd:(\d+)').firstMatch(configParts);
-      if (dataMatch != null) {
-        dataLimitMb = int.tryParse(dataMatch.group(1)!);
-      }
+      if (dataMatch == null) return null;
+      dataLimitMb = int.parse(dataMatch.group(1)!);
 
       final modeMatch = RegExp(r'm:(up|pin)').firstMatch(configParts);
-      if (modeMatch != null) {
-        mode = modeMatch.group(1) == 'pin' ? TicketMode.pin : TicketMode.userPass;
-      }
+      if (modeMatch == null) return null;
+      mode = modeMatch.group(1) == 'pin' ? TicketMode.pin : TicketMode.userPass;
 
       final lengthMatch = RegExp(r'l:(\d+)(?:,(\d+))?').firstMatch(configParts);
-      if (lengthMatch != null) {
-        userLen = int.tryParse(lengthMatch.group(1)!);
-        if (lengthMatch.group(2) != null) {
-          passLen = int.tryParse(lengthMatch.group(2)!);
-        } else {
-          // PIN mode: passLen = userLen
-          passLen = userLen;
-        }
+      if (lengthMatch == null) return null;
+      userLen = int.parse(lengthMatch.group(1)!);
+      if (lengthMatch.group(2) != null) {
+        passLen = int.parse(lengthMatch.group(2)!);
+      } else {
+        // PIN mode: passLen = userLen
+        passLen = userLen;
       }
 
       final charsetMatch = RegExp(r'c:(num|mix)').firstMatch(configParts);
-      if (charsetMatch != null) {
-        charset = charsetMatch.group(1) == 'num' ? Charset.numeric : Charset.alphanumeric;
-      }
+      if (charsetMatch == null) return null;
+      charset = charsetMatch.group(1) == 'num' ? Charset.numeric : Charset.alphanumeric;
 
-      // Parse time type (default to paused for backward compatibility)
+      // Parse time type (required)
       final typeMatch = RegExp(r't:(pa|el)').firstMatch(configParts);
-      final timeType = typeMatch != null && typeMatch.group(1) == 'el' 
+      if (typeMatch == null) return null;
+      final timeType = typeMatch.group(1) == 'el' 
           ? TicketType.elapsed 
           : TicketType.paused;
 
-      // Validate required fields
-      if (price == null || validity == null || mode == null || userLen == null || passLen == null || charset == null) {
-        return null;
-      }
+      // All fields are required and parsed above
 
       // Get RouterOS native properties
       final id = row['.id'] ?? '';
       final rateLimit = row['rate-limit'] ?? '';
-      final sharedUsers = int.tryParse(row['shared-users'] ?? '1') ?? 1;
+      final sharedUsers = int.parse(row['shared-users']!);
 
       return HotspotPlan(
         id: id,
         name: displayName,
         price: price,
         validity: validity,
-        dataLimitMb: dataLimitMb ?? 0,
+        dataLimitMb: dataLimitMb,
         mode: mode,
         userLen: userLen,
         passLen: passLen,

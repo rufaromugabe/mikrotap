@@ -27,6 +27,9 @@ class HotspotProfileService {
     final attrs = <String, String>{
       'name': n,
       'shared-users': (sharedUsers < 1) ? '1' : '$sharedUsers',
+      'keepalive-timeout': '00:02:00', // Standard 2 minutes - detects WiFi drops
+      'status-autorefresh': '00:01:00', // 1 minute - refresh user status
+      'transparent-proxy': 'yes', // Better compatibility
     };
     if (rateLimit != null) attrs['rate-limit'] = rateLimit;
     if ((sessionTimeout ?? '').trim().isNotEmpty) attrs['session-timeout'] = sessionTimeout!.trim();

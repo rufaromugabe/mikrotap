@@ -7,9 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../data/services/routeros_api_client.dart';
 import '../../services/hotspot_portal_service.dart';
-import '../../services/hotspot_profile_service.dart';
 import '../../services/hotspot_provisioning_service.dart';
-import '../../providers/active_router_provider.dart';
 import 'router_home_screen.dart';
 import 'router_reboot_wait_screen.dart';
 
@@ -129,8 +127,9 @@ class _RouterInitializationScreenState extends ConsumerState<RouterInitializatio
   bool _isPrivateV4(String ip) {
     final p = ip.split('.');
     if (p.length != 4) return false;
-    final a = int.tryParse(p[0]) ?? -1;
-    final b = int.tryParse(p[1]) ?? -1;
+    final a = int.tryParse(p[0]);
+    final b = int.tryParse(p[1]);
+    if (a == null || b == null) return false;
     if (a == 10) return true;
     if (a == 172 && b >= 16 && b <= 31) return true;
     if (a == 192 && b == 168) return true;
@@ -437,7 +436,7 @@ class _RouterInitializationScreenState extends ConsumerState<RouterInitializatio
       }
 
       final gw = _gatewayCtrl.text.trim();
-      final cidr = int.tryParse(_cidrCtrl.text.trim()) ?? 24;
+      final cidr = int.parse(_cidrCtrl.text.trim());
       final poolStart = _poolStartCtrl.text.trim();
       final poolEnd = _poolEndCtrl.text.trim();
       final hotspotIface = (_hotspotInterface ?? '').trim();
@@ -446,6 +445,13 @@ class _RouterInitializationScreenState extends ConsumerState<RouterInitializatio
       if (hotspotIface.isEmpty) {
         throw const RouterOsApiException('Select an access interface (recommended: bridge).');
       }
+
+      // Set RouterOS clock format to standard format for script compatibility
+      // This ensures date parsing in scripts works reliably
+      _logLine('Setting RouterOS clock format…');
+      await c.command(['/system/clock/set', '=time-zone-name=manual']);
+      // Note: date-format is read-only in RouterOS, but we ensure timezone is set
+      // The scripts will work with the default date format (jul/01/2000 style)
 
       _logLine('Provisioning hotspot…');
       await HotspotProvisioningService.apply(
