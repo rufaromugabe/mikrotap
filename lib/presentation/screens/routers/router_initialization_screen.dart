@@ -61,17 +61,7 @@ class _RouterInitializationScreenState extends ConsumerState<RouterInitializatio
   final _mkUserCtrl = TextEditingController(text: 'mikrotap');
   final _mkPassCtrl = TextEditingController();
 
-  // Step 5 (plan)
-  final _planNameCtrl = TextEditingController(text: 'basic');
-  final _planDownCtrl = TextEditingController(text: '5');
-  final _planUpCtrl = TextEditingController(text: '5');
-  final _planDurationCtrl = TextEditingController(text: '1h');
-  final _planPriceCtrl = TextEditingController(text: '0');
-  String? _createdPlanName;
 
-  // Step 6 (tickets)
-  final _ticketsCountCtrl = TextEditingController(text: '10');
-  final _ticketsPrefixCtrl = TextEditingController(text: 'MT');
 
   static const _cleanupScriptName = 'mikrotap-cleanup';
   static const _cleanupSchedulerName = 'mikrotap-cleanup';
@@ -84,7 +74,7 @@ class _RouterInitializationScreenState extends ConsumerState<RouterInitializatio
   @override
   void initState() {
     super.initState();
-    _stepIndex = (widget.args.resumeStep ?? 0).clamp(0, 5);
+    _stepIndex = (widget.args.resumeStep ?? 0).clamp(0, 3);
     // Auto-refresh status on load (no manual refresh button).
     unawaited(_refresh());
   }
@@ -98,13 +88,6 @@ class _RouterInitializationScreenState extends ConsumerState<RouterInitializatio
     _dnsNameCtrl.dispose();
     _mkUserCtrl.dispose();
     _mkPassCtrl.dispose();
-    _planNameCtrl.dispose();
-    _planDownCtrl.dispose();
-    _planUpCtrl.dispose();
-    _planDurationCtrl.dispose();
-    _planPriceCtrl.dispose();
-    _ticketsCountCtrl.dispose();
-    _ticketsPrefixCtrl.dispose();
     super.dispose();
   }
 
@@ -543,62 +526,7 @@ class _RouterInitializationScreenState extends ConsumerState<RouterInitializatio
     );
   }
 
-  Future<void> _createFirstPlan() async {
-    final name = _planNameCtrl.text.trim();
-    if (name.isEmpty) {
-      setState(() => _status = 'Plan name required.');
-      return;
-    }
-    final down = num.tryParse(_planDownCtrl.text.trim());
-    final up = num.tryParse(_planUpCtrl.text.trim());
-    final duration = _planDurationCtrl.text.trim();
 
-    await _run((c) async {
-      _logLine('Creating plan "$name"…');
-      await HotspotProfileService.upsertProfile(
-        c,
-        name: name,
-        downMbps: down,
-        upMbps: up,
-        sharedUsers: 1,
-        sessionTimeout: duration.isEmpty ? null : duration,
-      );
-      _logLine('Plan ready.');
-      setState(() => _createdPlanName = name);
-      if (mounted) setState(() => _stepIndex = 5);
-    });
-  }
-
-  Future<void> _createTicketsAndPrint() async {
-    final active = ref.read(activeRouterProvider);
-    if (active == null) {
-      setState(() => _status = 'No active router session. Reconnect and try again.');
-      return;
-    }
-
-    final count = int.tryParse(_ticketsCountCtrl.text.trim()) ?? 10;
-    if (count < 1 || count > 500) {
-      setState(() => _status = 'Ticket count must be 1..500');
-      return;
-    }
-
-    // TODO: These variables will be used when voucher generation is implemented
-    // final profile = (_createdPlanName ?? '').trim().isEmpty ? 'mikrotap' : _createdPlanName!.trim();
-    // final uptime = _planDurationCtrl.text.trim().isEmpty ? '1h' : _planDurationCtrl.text.trim();
-    // final prefix = _ticketsPrefixCtrl.text.trim();
-    // final price = num.tryParse(_planPriceCtrl.text.trim());
-    // final seller = ref.read(authStateProvider).maybeWhen(data: (u) => u, orElse: () => null);
-
-    setState(() => _status = null);
-
-    // Note: Voucher generation now requires a Plan. 
-    // This wizard step should be updated to create a plan first, then generate vouchers.
-    // For now, redirect to the generation screen.
-    if (mounted) {
-      setState(() => _status = 'Please use the Vouchers > Generate screen to create vouchers with a plan.');
-    }
-    // TODO: Update wizard to create plan and generate vouchers using new API
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -629,7 +557,7 @@ class _RouterInitializationScreenState extends ConsumerState<RouterInitializatio
               : () {
                   // Gate progression where needed.
                   if (_stepIndex == 2 && !_setupApplied) return;
-                  if (_stepIndex < 5) setState(() => _stepIndex++);
+                  if (_stepIndex < 3) setState(() => _stepIndex++);
                 },
           onStepCancel: _loading
               ? null
@@ -637,7 +565,7 @@ class _RouterInitializationScreenState extends ConsumerState<RouterInitializatio
                   if (_stepIndex > 0) setState(() => _stepIndex--);
                 },
           controlsBuilder: (context, details) {
-            final isLast = _stepIndex == 5;
+            final isLast = _stepIndex == 3;
             return Padding(
               padding: const EdgeInsets.only(top: 12),
               child: Wrap(
@@ -939,126 +867,6 @@ class _RouterInitializationScreenState extends ConsumerState<RouterInitializatio
                     ],
                   ),
                 ),
-              ),
-            ),
-            Step(
-              title: const Text('First plan'),
-              subtitle: const Text('Create your first voucher plan'),
-              isActive: _stepIndex >= 4,
-              content: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextField(
-                    controller: _planNameCtrl,
-                    enabled: !_loading,
-                    decoration: const InputDecoration(
-                      labelText: 'Plan name (no spaces)',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _planDownCtrl,
-                          enabled: !_loading,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'Download (Mbps)', border: OutlineInputBorder()),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: TextField(
-                          controller: _planUpCtrl,
-                          enabled: !_loading,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'Upload (Mbps)', border: OutlineInputBorder()),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _planDurationCtrl,
-                    enabled: !_loading,
-                    decoration: const InputDecoration(
-                      labelText: 'Duration (e.g. 1h, 30m)',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _planPriceCtrl,
-                    enabled: !_loading,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Price (optional)',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  FilledButton.icon(
-                    onPressed: (_loading || !_setupApplied) ? null : _createFirstPlan,
-                    icon: const Icon(Icons.add),
-                    label: Text(_createdPlanName == null ? 'Create plan' : 'Plan created: $_createdPlanName'),
-                  ),
-                  if (_status != null) ...[
-                    const SizedBox(height: 12),
-                    Text(_status!),
-                  ],
-                ],
-              ),
-            ),
-            Step(
-              title: const Text('First tickets'),
-              subtitle: const Text('Generate and print'),
-              isActive: _stepIndex >= 5,
-              content: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Plan: ${(_createdPlanName ?? _planNameCtrl.text).trim().isEmpty ? 'mikrotap' : (_createdPlanName ?? _planNameCtrl.text)}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _ticketsCountCtrl,
-                          enabled: !_loading,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'How many tickets?', border: OutlineInputBorder()),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      SizedBox(
-                        width: 110,
-                        child: TextField(
-                          controller: _ticketsPrefixCtrl,
-                          enabled: !_loading,
-                          decoration: const InputDecoration(labelText: 'Prefix', border: OutlineInputBorder()),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  FilledButton.icon(
-                    onPressed: (_loading || !_setupApplied) ? null : _createTicketsAndPrint,
-                    icon: const Icon(Icons.print_outlined),
-                    label: const Text('Create tickets & print'),
-                  ),
-                  const SizedBox(height: 10),
-                  OutlinedButton(
-                    onPressed: () => context.go(RouterHomeScreen.routePath),
-                    child: const Text('Finish'),
-                  ),
-                  if (_status != null) ...[
-                    const SizedBox(height: 12),
-                    Text(_status!),
-                  ],
-                ],
               ),
             ),
           ],
