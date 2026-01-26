@@ -115,20 +115,48 @@ class HotspotPortalService {
     final randomHash = _generateRandomHash();
     final directoryName = 'mkt_$randomHash';
 
+    // Determine background image path before generating HTML
+    String? backgroundImagePath;
+    if (branding.backgroundDataUri != null && branding.backgroundDataUri!.trim().isNotEmpty) {
+      // Extract MIME type and determine file extension
+      final parts = branding.backgroundDataUri!.split(',');
+      if (parts.length == 2) {
+        final mimePart = parts[0];
+        
+        // Determine file extension from MIME type
+        String ext = 'jpg'; // default
+        if (mimePart.contains('image/png')) {
+          ext = 'png';
+        } else if (mimePart.contains('image/jpeg') || mimePart.contains('image/jpg')) {
+          ext = 'jpg';
+        } else if (mimePart.contains('image/webp')) {
+          ext = 'webp';
+        }
+        
+        backgroundImagePath = 'img/background.$ext';
+      }
+    }
+
     // 1. Push Root Files
-    await _upsertFile(c, name: '$directoryName/login.html', contents: _loginHtml(branding));
+    await _upsertFile(c, name: '$directoryName/login.html', contents: _loginHtml(branding, previewMode: false, routerBackgroundImagePath: backgroundImagePath));
     await _upsertFile(c, name: '$directoryName/logout.html', contents: _logoutHtml(branding));
     await _upsertFile(c, name: '$directoryName/status.html', contents: _statusHtml(branding));
     await _upsertFile(c, name: '$directoryName/md5.js', contents: _md5Js());
 
     // 2. Push CSS Directory
-    await _upsertFile(c, name: '$directoryName/css/style.css', contents: _exactStyleCss(branding));
+    await _upsertFile(c, name: '$directoryName/css/style.css', contents: _exactStyleCss(branding, false));
 
-    // 3. Push Image Directory (if logo exists)
+    // 3. Push Image Directory (logo and background)
     if (branding.logoDataUri != null) {
       // Extract base64 part from data URI
       final base64String = branding.logoDataUri!.split(',').last;
       await _upsertFile(c, name: '$directoryName/img/logo.png', contents: base64String);
+    }
+    
+    // Upload background image if provided
+    if (backgroundImagePath != null && branding.backgroundDataUri != null) {
+      final base64String = branding.backgroundDataUri!.split(',').last;
+      await _upsertFile(c, name: '$directoryName/$backgroundImagePath', contents: base64String);
     }
 
     // 4. Point Hotspot Profile to this folder
@@ -180,94 +208,119 @@ class HotspotPortalService {
   }
 
   // EXACT REPRODUCTION OF THE TABBED LOGIN HTML (MikroTicket style)
-  static String _loginHtml(PortalBranding b, {bool previewMode = false}) {
+  static String _loginHtml(PortalBranding b, {bool previewMode = false, String? routerBackgroundImagePath}) {
     final title = _escapeHtml(b.title);
     final preset = presetById(b.themeId);
-    final bg = (b.backgroundDataUri != null && b.backgroundDataUri!.trim().isNotEmpty)
-        ? 'linear-gradient(rgba(2,6,23,.68), rgba(2,6,23,.68)), url(${b.backgroundDataUri})'
-        : preset.bgCss;
-    final logoPath = previewMode ? (b.logoDataUri ?? '') : 'img/logo.png';
-    final logoExists = previewMode ? (b.logoDataUri != null) : true;
+    
+    // 1. Handle Colors and Backgrounds
+    // Use background image if provided (data URI in preview, file path in router)
+    String bgStyle;
+    if (previewMode && b.backgroundDataUri != null && b.backgroundDataUri!.trim().isNotEmpty) {
+      // Preview mode: use data URI directly
+      bgStyle = 'background: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url(${b.backgroundDataUri}) center/cover no-repeat !important;';
+    } else if (!previewMode && routerBackgroundImagePath != null) {
+      // Router mode: use uploaded file path
+      bgStyle = 'background: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url($routerBackgroundImagePath) center/cover no-repeat !important;';
+    } else {
+      // Fallback to theme background
+      bgStyle = 'background: ${preset.bgCss} !important;';
+    }
 
+    // 2. Handle Logo Data (Router vs Preview)
+    final logoSrc = previewMode 
+        ? (b.logoDataUri ?? '') 
+        : 'img/logo.png';
+    final showLogo = (previewMode && b.logoDataUri != null) || (!previewMode);
+
+    // 3. Mock Variables for Preview
     final formAction = previewMode ? '#' : r'\$(link-login-only)';
-    final dstValue = previewMode ? '' : r'\$(link-orig)';
+    final usernameVal = previewMode ? '' : r'value="\$(username)" ';
+    
+    // Logic Stripping
+    final ifChapStart = previewMode ? '' : r'\$(if chap-id)';
+    final ifChapEnd = previewMode ? '' : r'\$(endif)';
+    final errorBlock = previewMode 
+        ? '<p class="info">Welcome to $title</p>' 
+        : r'\$(if error)<p class="info alert">\$(error)</p>\$(endif)';
+
+    // CSS: inline in preview, external link for router
+    final cssLink = previewMode ? '' : '<link rel="stylesheet" href="css/style.css">';
+    final cssContent = previewMode ? _exactStyleCss(b, previewMode) : '';
 
     return '''
 <!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>$title</title>
-    <link rel="stylesheet" href="css/style.css">
+    $cssLink
+    ${previewMode ? '<style>$cssContent</style>' : ''}
 </head>
-<body style="background: $bg !important;">
-    \$(if chap-id)
-    <form name="sendin" action="\$(link-login-only)" method="post" style="display:none">
+<body style="$bgStyle">
+    $ifChapStart
+    <form name="sendin" action="$formAction" method="post" style="display:none">
         <input type="hidden" name="username" />
         <input type="hidden" name="password" />
-        <input type="hidden" name="dst" value="\$(link-orig)" />
+        <input type="hidden" name="dst" value="" />
         <input type="hidden" name="popup" value="true" />
     </form>
-    <script src="md5.js"></script>
+    <script>${previewMode ? _md5Js() : '/* md5.js load */'}</script>
     <script>
         function doLogin() {
             document.sendin.username.value = document.login.username.value;
-            var chapId = '\$(chap-id)';
-            var chapChal = '\$(chap-challenge)';
-            document.sendin.password.value = hexMD5(chapId + document.login.password.value + chapChal);
+            var chal = '${previewMode ? "123" : r"\$(chap-challenge)"}';
+            var cid = '${previewMode ? "abc" : r"\$(chap-id)"}';
+            document.sendin.password.value = hexMD5(cid + document.login.password.value + chal);
             document.sendin.submit();
             return false;
         }
     </script>
-    \$(endif)
-    <div class="ie-fixMinHeight">
-        <div class="main">
-            <div class="wrap animated fadeIn">
-                ${logoExists ? '<div style="text-align: center; margin:10px;"><img src="$logoPath" style="border-radius:10px; width:90px; height:90px; object-fit: cover;" alt="logo"/></div>' : ''}
-                
-                <div class="form-container">
-                    <ul class="tabs">
-                        <li class="tab active" data-tab="pin" onclick="switchTab('pin')">🔑 PIN</li>
-                        <li class="tab" data-tab="user" onclick="switchTab('user')">👤 User</li>
-                    </ul>
-                
-                    <form name="login" action="$formAction" method="post" \$(if chap-id) onSubmit="return doLogin()" \$(endif) id="loginForm">
-                        <input type="hidden" name="dst" value="$dstValue" />
-                        <input type="hidden" name="popup" value="true" />
-                        <p class="info \$(if error)alert\$(endif)">\$(if error)\$(error)\$(else)Welcome to $title\$(endif)</p>
-                
-                        <label>
-                            <input name="username" id="mainInput" class="input-text" type="text" value="\$(username)" placeholder="PIN Code" />
-                        </label>
-                
-                        <label id="passWrapper" class="hidden">
-                            <input name="password" id="passInput" class="input-text" type="password" placeholder="Password" />
-                        </label>
-                
-                        <input type="submit" value="Connect" class="button-submit"/>
-                    </form>
-                </div>
+    $ifChapEnd
 
-                <script>
-                    var mode = 'pin';
-                    function switchTab(t) {
-                        mode = t;
-                        var tabs = document.querySelectorAll('.tab');
-                        tabs[0].classList.toggle('active', t === 'pin');
-                        tabs[1].classList.toggle('active', t === 'user');
-                        document.getElementById('passWrapper').classList.toggle('hidden', t === 'pin');
-                        document.getElementById('mainInput').placeholder = (t === 'pin') ? 'PIN Code' : 'Username';
+    <div class="main">
+        <div class="wrap animated fadeIn">
+            ${showLogo ? '<div style="text-align: center; margin-bottom:15px;"><img src="$logoSrc" style="border-radius:10px; width:80px; height:80px; object-fit: cover; border: 2px solid rgba(255,255,255,0.2);" alt="logo"/></div>' : ''}
+            
+            <div class="form-container">
+                <ul class="tabs">
+                    <li class="tab active" id="tPin" onclick="switchTab('pin')">🔑 PIN</li>
+                    <li class="tab" id="tUser" onclick="switchTab('user')">👤 User</li>
+                </ul>
+            
+                <form name="login" action="$formAction" method="post" ${previewMode ? 'onsubmit="return doLogin()"' : r'\$(if chap-id) onSubmit="return doLogin()" \$(endif)'} id="loginForm">
+                    $errorBlock
+                    <label>
+                        <input name="username" id="mainInput" class="input-text" type="text" $usernameVal placeholder="PIN Code" autocomplete="off" />
+                    </label>
+            
+                    <label id="passWrapper" style="display: none;">
+                        <input name="password" id="passInput" class="input-text" type="password" placeholder="Password" />
+                    </label>
+            
+                    <input type="submit" value="Connect" class="button-submit"/>
+                </form>
+            </div>
+
+            <script>
+                var mode = 'pin';
+                function switchTab(t) {
+                    mode = t;
+                    document.getElementById('tPin').className = (t === 'pin') ? 'tab active' : 'tab';
+                    document.getElementById('tUser').className = (t === 'user') ? 'tab active' : 'tab';
+                    document.getElementById('passWrapper').style.display = (t === 'pin') ? 'none' : 'block';
+                    document.getElementById('mainInput').placeholder = (t === 'pin') ? 'PIN Code' : 'Username';
+                }
+                document.getElementById('loginForm').onsubmit = function() {
+                    if(mode === 'pin') {
+                        document.getElementById('passInput').value = document.getElementById('mainInput').value;
                     }
-                    document.login.onsubmit = function() {
-                        if(mode === 'pin') document.login.password.value = document.login.username.value;
-                        return true;
-                    };
-                </script>
+                    return true;
+                };
+            </script>
 
-                <div style="padding:10px; text-align: center;">
-                    <p style="color: white; font-size: 12px;">Powered by MikroTap</p>
-                </div>
+            <div style="padding:10px; text-align: center;">
+                <p style="color: white; font-size: 11px; text-shadow: 1px 1px 2px rgba(0,0,0,0.8); margin:0;">Powered by MikroTap</p>
             </div>
         </div>
     </div>
@@ -277,9 +330,10 @@ class HotspotPortalService {
   }
 
   // EXACT REPRODUCTION OF THE style.css (MikroTicket style)
-  static String _exactStyleCss(PortalBranding b) {
-
-    return '''
+  static String _exactStyleCss(PortalBranding b, bool previewMode) {
+    // For router mode, return the original CSS
+    if (!previewMode) {
+      return '''
 body,html{min-height:100%; margin:0; font-family:sans-serif;}
 body{ background: linear-gradient(135deg, #2c3e50, #000000); display:flex; justify-content:center; align-items:center;}
 .wrap{ width: 100%; max-width: 410px; padding: 20px;}
@@ -297,6 +351,85 @@ label { display: block; }
 .main { width: 100%; }
 .animated { animation: fadeIn 0.5s; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+''';
+    }
+    
+    // For preview mode, return optimized CSS with overflow control
+    return '''
+body, html { 
+    margin: 0; 
+    padding: 0; 
+    font-family: sans-serif; 
+    height: 100%; 
+    width: 100%; 
+    overflow: hidden; /* Fixes the scroll issue */
+}
+.main { 
+    height: 100vh; 
+    width: 100%; 
+    display: flex; 
+    justify-content: center; 
+    align-items: center; 
+    box-sizing: border-box;
+}
+.wrap { 
+    width: 90%; 
+    max-width: 380px; 
+    padding: 10px; 
+}
+.form-container { 
+    text-align: center; 
+    background-color: rgba(255, 255, 255, 0.95); 
+    border-radius: 12px; 
+    padding: 20px; 
+    box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+}
+.tabs { 
+    display: flex; 
+    justify-content: center; 
+    margin-bottom: 15px; 
+    list-style: none; 
+    padding: 0; 
+    border-bottom: 1px solid #ddd;
+}
+.tab { 
+    flex: 1; 
+    text-align: center; 
+    padding: 10px; 
+    cursor: pointer; 
+    color: #888; 
+    font-weight: bold; 
+    font-size: 14px;
+}
+.tab.active { 
+    border-bottom: 3px solid #000; 
+    color: #000; 
+}
+.input-text { 
+    width: 100%; 
+    border: 1px solid #bbb; 
+    height: 42px; 
+    padding: 8px 12px; 
+    margin-bottom: 12px; 
+    border-radius: 8px; 
+    box-sizing: border-box; 
+    font-size: 16px;
+}
+.button-submit { 
+    background: #000; 
+    color: #fff; 
+    border: 0; 
+    width: 100%; 
+    height: 44px; 
+    border-radius: 8px; 
+    cursor: pointer; 
+    font-weight: bold; 
+    font-size: 16px;
+}
+.info { color: #444; margin-bottom: 10px; font-size: 13px; }
+.alert { color: #da3d41; font-weight: bold; }
+.animated { animation: fadeIn 0.4s ease-out; }
+@keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
 ''';
   }
 
