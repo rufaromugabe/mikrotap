@@ -453,6 +453,15 @@ class _RouterInitializationScreenState extends ConsumerState<RouterInitializatio
       // Note: date-format is read-only in RouterOS, but we ensure timezone is set
       // The scripts will work with the default date format (jul/01/2000 style)
 
+      // Enable NTP client to ensure router time is always correct
+      // MikroTicket functionality depends on accurate system clock for -da: tags
+      _logLine('Configuring NTP client…');
+      try {
+        await c.command(['/system/ntp/client/set', '=enabled=yes', '=servers=pool.ntp.org']);
+      } catch (e) {
+        _logLine('NTP configuration skipped (non-fatal): $e');
+      }
+
       _logLine('Provisioning hotspot…');
       await HotspotProvisioningService.apply(
         c,

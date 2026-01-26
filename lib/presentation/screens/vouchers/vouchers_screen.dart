@@ -176,9 +176,10 @@ class _VouchersBodyState extends ConsumerState<_VouchersBody> {
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (context, i) {
                       final v = filtered[i];
+                      final isPin = v.username == v.password;
                       final usedBytes = ((v.usageBytesIn ?? 0) + (v.usageBytesOut ?? 0));
                       final lines = <String>[
-                        'Pass: ${v.password}',
+                        if (!isPin) 'Pass: ${v.password}',
                         if (v.price != null) 'Price: \$${v.price}',
                         if (v.soldByName != null) 'By: ${v.soldByName}',
                         if (v.firstUsedAt != null) 
@@ -197,7 +198,10 @@ class _VouchersBodyState extends ConsumerState<_VouchersBody> {
                                 ? Colors.green 
                                 : Colors.grey,
                           ),
-                          title: Text(v.username, style: const TextStyle(fontWeight: FontWeight.bold)),
+                          title: Text(
+                            isPin ? 'PIN: ${v.username}' : 'User: ${v.username}',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                          ),
                           subtitle: Text(lines.join(' • ')),
                           trailing: IconButton(
                             tooltip: 'Delete',

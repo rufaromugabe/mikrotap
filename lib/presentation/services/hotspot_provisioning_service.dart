@@ -477,8 +477,8 @@ class HotspotProvisioningService {
     // 2. CORE MONITOR SCRIPT (mkt_sp_core_10)
     // Purpose: Checks elapsed time and validity limits.
     const coreScriptSource = r'''
-# Month map for date parsing
-:local v38 {"jan"="01"; "feb"="02"; "mar"="03"; "apr"="04"; "may"="05"; "jun"="06"; "jul"="07"; "aug"="08"; "sep"="09"; "oct"="10"; "nov"="11"; "dec"="12"};
+# Month map for date parsing (RouterOS v7 may return capitalized months)
+:local v38 {"jan"="01"; "feb"="02"; "mar"="03"; "apr"="04"; "may"="05"; "jun"="06"; "jul"="07"; "aug"="08"; "sep"="09"; "oct"="10"; "nov"="11"; "dec"="12"; "Jan"="01"; "Feb"="02"; "Mar"="03"; "Apr"="04"; "May"="05"; "Jun"="06"; "Jul"="07"; "Aug"="08"; "Sep"="09"; "Oct"="10"; "Nov"="11"; "Dec"="12"};
 :local v22 [/system clock get time];
 :local v23 [/system clock get date];
 :local v2 [:pick $v23 0 3];
