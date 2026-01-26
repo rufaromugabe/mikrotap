@@ -385,7 +385,8 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
                   ],
                 ),
               ),
-              actions: [
+            ),
+            actions: [
                 TextButton(
                   onPressed: dialogLoading ? null : () => Navigator.of(dialogContext).pop(),
                   child: const Text('Cancel'),
@@ -401,7 +402,7 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
                       : const Text('Create'),
                 ),
               ],
-            ));
+            );
           },
         );
       },
