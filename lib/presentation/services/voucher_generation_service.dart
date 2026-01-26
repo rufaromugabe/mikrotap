@@ -61,8 +61,9 @@ class VoucherGenerationService {
     // Convert data limit from MB to bytes
     final dataLimitBytes = plan.dataLimitMb > 0 ? (plan.dataLimitMb * 1024 * 1024) : null;
 
-    // Use the plan's RouterOS profile name
-    final profileName = plan.routerOsProfileName;
+    // Use the original profile name from router (exact match) or fallback to generated name
+    // This ensures we use the exact profile name that exists on the router
+    final profileName = plan.originalProfileName ?? plan.routerOsProfileName;
 
     for (var i = 0; i < quantity; i++) {
       String username;

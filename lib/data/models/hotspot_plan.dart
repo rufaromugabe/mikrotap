@@ -18,10 +18,12 @@ class HotspotPlan {
     required this.rateLimit,
     required this.sharedUsers,
     required this.timeType,
+    this.originalProfileName, // Original profile name from router (exact match)
   });
 
   final String id; // RouterOS internal ID (.id)
   final String name; // Display name (without profile_ prefix and MikroTicket config)
+  final String? originalProfileName; // Original profile name from router (for exact matching)
   final double price;
   final String validity; // "1h", "30d", etc.
   final int dataLimitMb; // 0 means unlimited
@@ -161,6 +163,7 @@ class HotspotPlan {
         rateLimit: rateLimit,
         sharedUsers: sharedUsers,
         timeType: timeType,
+        originalProfileName: name, // Store the exact profile name from router
       );
     } catch (e) {
       // Parsing failed, return null
@@ -220,6 +223,7 @@ class HotspotPlan {
     String? rateLimit,
     int? sharedUsers,
     TicketType? timeType,
+    String? originalProfileName,
   }) {
     return HotspotPlan(
       id: id ?? this.id,
@@ -234,6 +238,7 @@ class HotspotPlan {
       rateLimit: rateLimit ?? this.rateLimit,
       sharedUsers: sharedUsers ?? this.sharedUsers,
       timeType: timeType ?? this.timeType,
+      originalProfileName: originalProfileName ?? this.originalProfileName,
     );
   }
 }

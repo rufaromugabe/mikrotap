@@ -72,73 +72,85 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
 
     final validityOptions = ['1h', '12h', '1d', '7d', '30d'];
 
-    Future<void> submit() async {
-      final name = nameCtrl.text.trim();
-      if (name.isEmpty) {
-        setState(() => _status = 'Plan name required.');
-        return;
-      }
-      
-      final price = double.parse(priceCtrl.text.trim());
-      final dataLimit = int.parse(dataLimitCtrl.text.trim());
-      final down = num.tryParse(downCtrl.text.trim());
-      final up = num.tryParse(upCtrl.text.trim());
-      final shared = int.parse(sharedCtrl.text.trim());
-
-      final rateLimit = (down != null && up != null && down > 0 && up > 0) ? '${down}M/${up}M' : throw ArgumentError('Rate limit required');
-
-      setState(() {
-        _loading = true;
-        _status = null;
-      });
-
-      final repo = ref.read(routerPlanRepoProvider);
-      try {
-        await repo.client.login(username: session.username, password: session.password);
-
-        final plan = HotspotPlan(
-          id: '', // Will be set by router
-          name: name,
-          price: price,
-          validity: _validity,
-          dataLimitMb: dataLimit,
-          mode: _mode,
-          userLen: _userLen,
-          passLen: _passLen,
-          charset: _charset,
-          rateLimit: rateLimit,
-          sharedUsers: shared,
-          timeType: _timeType,
-        );
-
-        await repo.addPlan(plan);
-        if (mounted) Navigator.of(context).pop();
-        await _refresh();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Plan "$name" created')),
-          );
-        }
-      } catch (e) {
-        setState(() => _status = 'Create failed: $e');
-      } finally {
-        repo.client.close();
-        if (mounted) setState(() => _loading = false);
-      }
-    }
-
     if (!mounted) return;
+    bool dialogLoading = false;
+    String? dialogStatus;
+    
     await showDialog<void>(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            Future<void> submit() async {
+              final name = nameCtrl.text.trim();
+              if (name.isEmpty) {
+                setDialogState(() {
+                  dialogStatus = 'Plan name required.';
+                });
+                return;
+              }
+              
+              final price = double.parse(priceCtrl.text.trim());
+              final dataLimit = int.parse(dataLimitCtrl.text.trim());
+              final down = num.tryParse(downCtrl.text.trim());
+              final up = num.tryParse(upCtrl.text.trim());
+              final shared = int.parse(sharedCtrl.text.trim());
+
+              final rateLimit = (down != null && up != null && down > 0 && up > 0) ? '${down}M/${up}M' : throw ArgumentError('Rate limit required');
+
+              setDialogState(() {
+                dialogLoading = true;
+                dialogStatus = null;
+              });
+
+              final repo = ref.read(routerPlanRepoProvider);
+              try {
+                await repo.client.login(username: session.username, password: session.password);
+
+                final plan = HotspotPlan(
+                  id: '', // Will be set by router
+                  name: name,
+                  price: price,
+                  validity: _validity,
+                  dataLimitMb: dataLimit,
+                  mode: _mode,
+                  userLen: _userLen,
+                  passLen: _passLen,
+                  charset: _charset,
+                  rateLimit: rateLimit,
+                  sharedUsers: shared,
+                  timeType: _timeType,
+                );
+
+                await repo.addPlan(plan);
+                if (mounted) {
+                  Navigator.of(dialogContext).pop();
+                  await _refresh();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Plan "$name" created')),
+                  );
+                }
+              } catch (e) {
+                setDialogState(() {
+                  dialogStatus = 'Create failed: $e';
+                  dialogLoading = false;
+                });
+              } finally {
+                repo.client.close();
+              }
+            }
             return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               title: const Text('New voucher plan'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
+              content: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
                     TextField(
                       controller: nameCtrl,
                       decoration: const InputDecoration(
@@ -350,20 +362,46 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
                         border: OutlineInputBorder(),
                       ),
                     ),
+                    if (dialogStatus != null) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: dialogStatus!.startsWith('Create failed')
+                              ? Colors.red.withOpacity(0.1)
+                              : Colors.orange.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          dialogStatus!,
+                          style: TextStyle(
+                            color: dialogStatus!.startsWith('Create failed')
+                                ? Colors.red.shade900
+                                : Colors.orange.shade900,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
               actions: [
                 TextButton(
-                  onPressed: _loading ? null : () => Navigator.of(context).pop(),
+                  onPressed: dialogLoading ? null : () => Navigator.of(dialogContext).pop(),
                   child: const Text('Cancel'),
                 ),
                 FilledButton(
-                  onPressed: _loading ? null : submit,
-                  child: const Text('Create'),
+                  onPressed: dialogLoading ? null : submit,
+                  child: dialogLoading
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Create'),
                 ),
               ],
-            );
+            ));
           },
         );
       },

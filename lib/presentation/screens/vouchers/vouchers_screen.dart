@@ -49,6 +49,7 @@ class _VouchersBody extends ConsumerStatefulWidget {
 class _VouchersBodyState extends ConsumerState<_VouchersBody> {
   _VoucherUsageFilter _filter = _VoucherUsageFilter.all;
 
+
   @override
   Widget build(BuildContext context) {
     final args = widget.args;
@@ -83,8 +84,8 @@ class _VouchersBodyState extends ConsumerState<_VouchersBody> {
             icon: const Icon(Icons.refresh),
           ),
           FilledButton.icon(
-            onPressed: () {
-              context.push(
+            onPressed: () async {
+              await context.push(
                 GenerateVouchersScreen.routePath,
                 extra: GenerateVouchersArgs(
                   routerId: args.routerId,
@@ -93,6 +94,10 @@ class _VouchersBodyState extends ConsumerState<_VouchersBody> {
                   password: args.password,
                 ),
               );
+              // Refresh vouchers when returning from generate screen
+              if (mounted) {
+                ref.invalidate(vouchersProvider);
+              }
             },
             icon: const Icon(Icons.add),
             label: const Text('Generate'),

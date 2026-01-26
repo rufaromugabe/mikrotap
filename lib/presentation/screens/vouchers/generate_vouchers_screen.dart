@@ -114,6 +114,11 @@ class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen>
       );
 
       if (!mounted) return;
+      
+      // Invalidate vouchers provider to refresh the list
+      ref.invalidate(vouchersProvider);
+      ref.invalidate(vouchersProviderFamily(widget.args.routerId));
+      
       context.pop();
     } on RouterOsApiException catch (e) {
       setState(() => _status = e.message);

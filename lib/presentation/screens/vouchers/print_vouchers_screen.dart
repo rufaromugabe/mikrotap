@@ -35,6 +35,23 @@ class PrintVouchersScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Print vouchers'),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh vouchers',
+            onPressed: () {
+              // Refresh the vouchers provider
+              ref.invalidate(vouchersProvider);
+              ref.invalidate(vouchersProviderFamily(args.routerId));
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Refreshing vouchers...')),
+                );
+              }
+            },
+            icon: const Icon(Icons.refresh),
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: SafeArea(
         child: vouchers.when(
