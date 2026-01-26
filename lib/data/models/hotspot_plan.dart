@@ -54,18 +54,18 @@ class HotspotPlan {
     // Convert validity to RouterOS time format (e.g., "1h" -> "0d 01:00:00", "30d" -> "30d 00:00:00")
     String formatRouterOsTime(String v) {
       if (v.endsWith('h')) {
-        final hours = int.tryParse(v.substring(0, v.length - 1)) ?? 0;
+        final hours = int.parse(v.substring(0, v.length - 1));
         return '0d ${hours.toString().padLeft(2, '0')}:00:00';
       } else if (v.endsWith('d')) {
-        final days = int.tryParse(v.substring(0, v.length - 1)) ?? 0;
+        final days = int.parse(v.substring(0, v.length - 1));
         return '${days}d 00:00:00';
       } else if (v.endsWith('m')) {
-        final mins = int.tryParse(v.substring(0, v.length - 1)) ?? 0;
+        final mins = int.parse(v.substring(0, v.length - 1));
         final hours = mins ~/ 60;
         final remainingMins = mins % 60;
         return '0d ${hours.toString().padLeft(2, '0')}:${remainingMins.toString().padLeft(2, '0')}:00';
       }
-      return '0d 01:00:00'; // Default
+      throw ArgumentError('Invalid validity format: $v');
     }
     
     final utValue = formatRouterOsTime(validity);
@@ -79,11 +79,14 @@ class HotspotPlan {
         // Default validity: 3 days for hourly tickets
         validityLimit = '3d 00:00:00';
       } else if (validity.endsWith('d')) {
-        final days = int.tryParse(validity.substring(0, validity.length - 1)) ?? 1;
+        final days = int.parse(validity.substring(0, validity.length - 1));
         // Validity is 2x the usage time for daily tickets
         validityLimit = '${days * 2}d 00:00:00';
+      } else if (validity.endsWith('m')) {
+        // For minute-based tickets, use 7 days default validity
+        validityLimit = '7d 00:00:00';
       } else {
-        validityLimit = '7d 00:00:00'; // Default
+        throw ArgumentError('Invalid validity format for paused mode: $validity');
       }
       return '$result-vl:$validityLimit';
     }

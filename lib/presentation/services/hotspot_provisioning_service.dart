@@ -494,17 +494,14 @@ class HotspotProvisioningService {
   :local profileName ($uData->"profile");
   :local comment ($uData->"comment");
   
-  # Skip if profile doesn't have our flags
-  :if ([:find $profileName "-ut:"] >= 0) do={
-    # 1. PARSE PROFILE FLAGS
-    # Find -kt: (Keep Time / Paused)
-    :local ktPos [:find $profileName "-kt:"];
-    :local isPaused "false";
-    :if ($ktPos >= 0) do={
+    # Skip if profile doesn't have our flags
+    :if ([:find $profileName "-ut:"] >= 0) do={
+      # 1. PARSE PROFILE FLAGS
+      # Find -kt: (Keep Time / Paused) - always present in our profiles
+      :local ktPos [:find $profileName "-kt:"];
       :local ktEnd [:find $profileName "-" ($ktPos+1)];
       :if ($ktEnd < 0) do={ :set ktEnd [:len $profileName] }
-      :set isPaused [:pick $profileName ($ktPos+4) $ktEnd];
-    }
+      :local isPaused [:pick $profileName ($ktPos+4) $ktEnd];
     
     # Find -ut: (Usage Time limit)
     :local utPos [:find $profileName "-ut:"];
