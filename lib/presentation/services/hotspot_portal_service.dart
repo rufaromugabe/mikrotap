@@ -115,30 +115,8 @@ class HotspotPortalService {
     final randomHash = _generateRandomHash();
     final directoryName = 'mkt_$randomHash';
 
-    // Determine background image path before generating HTML
-    String? backgroundImagePath;
-    if (branding.backgroundDataUri != null && branding.backgroundDataUri!.trim().isNotEmpty) {
-      // Extract MIME type and determine file extension
-      final parts = branding.backgroundDataUri!.split(',');
-      if (parts.length == 2) {
-        final mimePart = parts[0];
-        
-        // Determine file extension from MIME type
-        String ext = 'jpg'; // default
-        if (mimePart.contains('image/png')) {
-          ext = 'png';
-        } else if (mimePart.contains('image/jpeg') || mimePart.contains('image/jpg')) {
-          ext = 'jpg';
-        } else if (mimePart.contains('image/webp')) {
-          ext = 'webp';
-        }
-        
-        backgroundImagePath = 'img/background.$ext';
-      }
-    }
-
-    // 1. Push Root Files
-    await _upsertFile(c, name: '$directoryName/login.html', contents: _loginHtml(branding, previewMode: false, routerBackgroundImagePath: backgroundImagePath));
+    // 1. Push Root Files (images are inlined as data URIs in HTML)
+    await _upsertFile(c, name: '$directoryName/login.html', contents: _loginHtml(branding, previewMode: false));
     await _upsertFile(c, name: '$directoryName/logout.html', contents: _logoutHtml(branding));
     await _upsertFile(c, name: '$directoryName/status.html', contents: _statusHtml(branding));
     await _upsertFile(c, name: '$directoryName/md5.js', contents: _md5Js());
@@ -146,20 +124,7 @@ class HotspotPortalService {
     // 2. Push CSS Directory
     await _upsertFile(c, name: '$directoryName/css/style.css', contents: _exactStyleCss(branding, false));
 
-    // 3. Push Image Directory (logo and background)
-    if (branding.logoDataUri != null) {
-      // Extract base64 part from data URI
-      final base64String = branding.logoDataUri!.split(',').last;
-      await _upsertFile(c, name: '$directoryName/img/logo.png', contents: base64String);
-    }
-    
-    // Upload background image if provided
-    if (backgroundImagePath != null && branding.backgroundDataUri != null) {
-      final base64String = branding.backgroundDataUri!.split(',').last;
-      await _upsertFile(c, name: '$directoryName/$backgroundImagePath', contents: base64String);
-    }
-
-    // 4. Point Hotspot Profile to this folder
+    // 3. Point Hotspot Profile to this folder
     final profileId = await c.findId('/ip/hotspot/profile/print', key: 'name', value: 'mikrotap');
     if (profileId != null) {
       await c.setById(
@@ -208,29 +173,25 @@ class HotspotPortalService {
   }
 
   // EXACT REPRODUCTION OF THE TABBED LOGIN HTML (MikroTicket style)
-  static String _loginHtml(PortalBranding b, {bool previewMode = false, String? routerBackgroundImagePath}) {
+  static String _loginHtml(PortalBranding b, {bool previewMode = false}) {
     final title = _escapeHtml(b.title);
     final preset = presetById(b.themeId);
     
     // 1. Handle Colors and Backgrounds
-    // Use background image if provided (data URI in preview, file path in router)
+    // ALWAYS use data URIs (Base64) for images - inlined directly in HTML
+    // This avoids binary file upload issues and API limitations
     String bgStyle;
-    if (previewMode && b.backgroundDataUri != null && b.backgroundDataUri!.trim().isNotEmpty) {
-      // Preview mode: use data URI directly
+    if (b.backgroundDataUri != null && b.backgroundDataUri!.trim().isNotEmpty) {
+      // Use data URI directly (works in both preview and router mode)
       bgStyle = 'background: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url(${b.backgroundDataUri}) center/cover no-repeat !important;';
-    } else if (!previewMode && routerBackgroundImagePath != null) {
-      // Router mode: use uploaded file path
-      bgStyle = 'background: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url($routerBackgroundImagePath) center/cover no-repeat !important;';
     } else {
       // Fallback to theme background
       bgStyle = 'background: ${preset.bgCss} !important;';
     }
 
-    // 2. Handle Logo Data (Router vs Preview)
-    final logoSrc = previewMode 
-        ? (b.logoDataUri ?? '') 
-        : 'img/logo.png';
-    final showLogo = (previewMode && b.logoDataUri != null) || (!previewMode);
+    // 2. Handle Logo Data - ALWAYS use data URI (inlined in HTML)
+    final logoSrc = b.logoDataUri ?? '';
+    final showLogo = b.logoDataUri != null && b.logoDataUri!.isNotEmpty;
 
     // 3. Mock Variables for Preview
     final formAction = previewMode ? '#' : r'\$(link-login-only)';

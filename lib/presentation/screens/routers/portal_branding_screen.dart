@@ -81,30 +81,47 @@ class _PortalBrandingScreenState extends ConsumerState<PortalBrandingScreen> {
   }
 
   Future<void> _pickImage({required bool forLogo}) async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-      withData: true,
-    );
-    final f = result?.files.single;
-    if (f == null || f.bytes == null) return;
-
-    // Keep it safe for RouterOS file contents (data-URI grows ~33%).
-    if (f.bytes!.length > 180 * 1024) {
-      setState(() => _status = 'Image too large. Please pick an image under ~180KB.');
-      return;
-    }
-
-    final mime = _guessMime(f.extension);
-    setState(() {
-      if (forLogo) {
-        _logoBytes = f.bytes;
-        _logoMime = mime;
-      } else {
-        _bgBytes = f.bytes;
-        _bgMime = mime;
+    try {
+      setState(() => _status = null);
+      
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        withData: true,
+      );
+      
+      if (result == null || result.files.isEmpty) return;
+      
+      final f = result.files.single;
+      if (f.bytes == null || f.bytes!.isEmpty) {
+        setState(() => _status = 'Failed to load image data.');
+        return;
       }
-    });
-    _updatePreview();
+
+      // Keep it safe for RouterOS file contents (data-URI grows ~33%).
+      // Also limit total HTML size to stay under RouterOS API limits (~256KB)
+      if (f.bytes!.length > 180 * 1024) {
+        setState(() => _status = 'Image too large. Please pick an image under ~180KB.');
+        return;
+      }
+
+      final mime = _guessMime(f.extension);
+      setState(() {
+        if (forLogo) {
+          _logoBytes = f.bytes;
+          _logoMime = mime;
+        } else {
+          _bgBytes = f.bytes;
+          _bgMime = mime;
+        }
+        _status = null;
+      });
+      
+      // Auto-save after picking
+      await _saveLocal();
+      _updatePreview();
+    } catch (e) {
+      setState(() => _status = 'Error picking image: $e');
+    }
   }
 
   void _updatePreview() {
@@ -112,18 +129,23 @@ class _PortalBrandingScreenState extends ConsumerState<PortalBrandingScreen> {
     final session = ref.read(activeRouterProvider);
     if (session == null) return;
 
-    final preset = HotspotPortalService.presetById(_themeId);
-    final branding = PortalBranding(
-      title: _titleCtrl.text.trim().isEmpty ? session.routerName : _titleCtrl.text.trim(),
-      primaryHex: _primaryCtrl.text.trim().isEmpty ? preset.primaryHex : _primaryCtrl.text.trim(),
-      supportText: _supportCtrl.text.trim().isEmpty ? 'Need help? Contact the attendant.' : _supportCtrl.text.trim(),
-      themeId: _themeId,
-      logoDataUri: _dataUri(_logoBytes, _logoMime),
-      backgroundDataUri: _dataUri(_bgBytes, _bgMime),
-    );
+    try {
+      final preset = HotspotPortalService.presetById(_themeId);
+      final branding = PortalBranding(
+        title: _titleCtrl.text.trim().isEmpty ? session.routerName : _titleCtrl.text.trim(),
+        primaryHex: _primaryCtrl.text.trim().isEmpty ? preset.primaryHex : _primaryCtrl.text.trim(),
+        supportText: _supportCtrl.text.trim().isEmpty ? 'Need help? Contact the attendant.' : _supportCtrl.text.trim(),
+        themeId: _themeId,
+        logoDataUri: _dataUri(_logoBytes, _logoMime),
+        backgroundDataUri: _dataUri(_bgBytes, _bgMime),
+      );
 
-    final html = HotspotPortalService.buildLoginHtmlPreview(branding: branding);
-    _previewController.loadHtmlString(html);
+      final html = HotspotPortalService.buildLoginHtmlPreview(branding: branding);
+      _previewController.loadHtmlString(html);
+    } catch (e) {
+      debugPrint('Error updating preview: $e');
+      setState(() => _status = 'Preview error: $e');
+    }
   }
 
   Future<void> _load() async {
