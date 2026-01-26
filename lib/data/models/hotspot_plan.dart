@@ -35,13 +35,60 @@ class HotspotPlan {
 
   /// Generates the RouterOS profile name with encoded metadata
   /// Format: MT_<Name>_p:<price>_v:<validity>_d:<dataLimit>_m:<mode>_l:<lengths>_c:<charset>_t:<timeType>
+  /// Also includes Mikroticket-style flags: -ut:<usageTime> -kt:<keepTime> -vl:<validityLimit>
   String get routerOsProfileName {
     final modeStr = mode == TicketMode.pin ? 'pin' : 'up';
     final charsetStr = charset == Charset.numeric ? 'num' : 'mix';
     final lengthsStr = mode == TicketMode.pin ? '$userLen' : '$userLen,$passLen';
     final typeStr = timeType == TicketType.elapsed ? 'el' : 'pa';
     
-    return 'MT_${name}_p:${price}_v:${validity}_d:${dataLimitMb}_m:${modeStr}_l:${lengthsStr}_c:${charsetStr}_t:${typeStr}';
+    // Base format with our tokens
+    final base = 'MT_${name}_p:${price}_v:${validity}_d:${dataLimitMb}_m:${modeStr}_l:${lengthsStr}_c:${charsetStr}_t:${typeStr}';
+    
+    // Add Mikroticket-style flags for script compatibility
+    // -ut: Usage Time limit (same as validity)
+    // -kt: Keep Time (false = elapsed, true = paused)
+    // -vl: Validity Limit (for paused mode, ensures ticket expires even if not used)
+    final keepTime = timeType == TicketType.paused ? 'true' : 'false';
+    
+    // Convert validity to RouterOS time format (e.g., "1h" -> "0d 01:00:00", "30d" -> "30d 00:00:00")
+    String formatRouterOsTime(String v) {
+      if (v.endsWith('h')) {
+        final hours = int.tryParse(v.substring(0, v.length - 1)) ?? 0;
+        return '0d ${hours.toString().padLeft(2, '0')}:00:00';
+      } else if (v.endsWith('d')) {
+        final days = int.tryParse(v.substring(0, v.length - 1)) ?? 0;
+        return '${days}d 00:00:00';
+      } else if (v.endsWith('m')) {
+        final mins = int.tryParse(v.substring(0, v.length - 1)) ?? 0;
+        final hours = mins ~/ 60;
+        final remainingMins = mins % 60;
+        return '0d ${hours.toString().padLeft(2, '0')}:${remainingMins.toString().padLeft(2, '0')}:00';
+      }
+      return '0d 01:00:00'; // Default
+    }
+    
+    final utValue = formatRouterOsTime(validity);
+    final result = '$base-ut:$utValue-kt:$keepTime';
+    
+    // For paused mode, add validity limit (typically 2-3x the usage time to prevent abuse)
+    if (timeType == TicketType.paused) {
+      // Calculate validity limit (e.g., if usage is 1h, validity might be 3d)
+      String validityLimit;
+      if (validity.endsWith('h')) {
+        // Default validity: 3 days for hourly tickets
+        validityLimit = '3d 00:00:00';
+      } else if (validity.endsWith('d')) {
+        final days = int.tryParse(validity.substring(0, validity.length - 1)) ?? 1;
+        // Validity is 2x the usage time for daily tickets
+        validityLimit = '${days * 2}d 00:00:00';
+      } else {
+        validityLimit = '7d 00:00:00'; // Default
+      }
+      return '$result-vl:$validityLimit';
+    }
+    
+    return result;
   }
 
   /// Parses a RouterOS profile row into a HotspotPlan

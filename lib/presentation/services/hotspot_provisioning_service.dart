@@ -448,26 +448,20 @@ class HotspotProvisioningService {
     onProgress?.call('Hotspot provisioning complete.');
   }
 
-  /// Installs RouterOS scripts for elapsed time tracking
+  /// Installs RouterOS scripts for elapsed time tracking (Mikroticket-style)
   static Future<void> _installScripts(RouterOsApiClient c) async {
-    // 1. Install the login monitor script
+    // 1. Install the login monitor script (stamps -da: on first login)
     // This script runs on user login to track start time for elapsed tickets
     const monitorScriptSource = r'''
 :local user $username;
-:local profile [/ip hotspot user get [find name=$user] profile];
+:local comment [/ip hotspot user get [find name=$user] comment];
 
-# Check if Profile is "Elapsed" type (looks for _t:el in name)
-:if ([:find $profile "_t:el"] >= 0) do={
-  :local comment [/ip hotspot user get [find name=$user] comment];
-  
-  # Check if already activated (look for "start=")
-  :if ([:find $comment "start="] < 0) do={
-    # First login! Mark start time in comment
-    :local date [/system clock get date];
-    :local time [/system clock get time];
-    :local newComment "$comment | start=$date $time";
-    /ip hotspot user set [find name=$user] comment=$newComment;
-  }
+# Only stamp if not already stamped (look for -da:)
+:if ([:find $comment "-da:"] < 0) do={
+  :local date [/system clock get date];
+  :local time [/system clock get time];
+  :local newComment "$comment-da:$date $time";
+  /ip hotspot user set [find name=$user] comment=$newComment;
 }
 ''';
 
@@ -486,65 +480,182 @@ class HotspotProvisioningService {
       });
     }
 
-    // 2. Install a Scheduler to clean up expired Elapsed users
-    // This runs every 5 minutes to disable users who exceeded elapsed time
+    // 2. Install a Scheduler to clean up expired users (Mikroticket-style)
+    // This runs every 3 minutes to check and remove expired users
+    // Handles both Elapsed (-kt:false) and Paused (-kt:true) time logic
     const cleanupSource = r'''
-:local expiredUsers "";
-:local users [/ip hotspot user find];
-:foreach user in=$users do={
-  :local profileName [/ip hotspot user get $user profile];
-  :if ([:find $profileName "_t:el"] >= 0) do={
-    :local comment [/ip hotspot user get $user comment];
-    :local startPos [:find $comment "start="];
-    :if ($startPos >= 0) do={
-      :local startStr [:pick $comment ($startPos + 6)];
-      :local spacePos [:find $startStr " "];
+:local date [/system clock get date];
+:local time [/system clock get time];
+:local nowSec [/system clock get time];
+
+# Loop through all users with a Start Date (-da:) in comment
+:foreach user in=[/ip hotspot user find where comment~"-da:"] do={
+  :local uData [/ip hotspot user get $user];
+  :local profileName ($uData->"profile");
+  :local comment ($uData->"comment");
+  
+  # Skip if profile doesn't have our flags
+  :if ([:find $profileName "-ut:"] >= 0) do={
+    # 1. PARSE PROFILE FLAGS
+    # Find -kt: (Keep Time / Paused)
+    :local ktPos [:find $profileName "-kt:"];
+    :local isPaused "false";
+    :if ($ktPos >= 0) do={
+      :local ktEnd [:find $profileName "-" ($ktPos+1)];
+      :if ($ktEnd < 0) do={ :set ktEnd [:len $profileName] }
+      :set isPaused [:pick $profileName ($ktPos+4) $ktEnd];
+    }
+    
+    # Find -ut: (Usage Time limit)
+    :local utPos [:find $profileName "-ut:"];
+    :local utEnd [:find $profileName "-" ($utPos+1)];
+    :if ($utEnd < 0) do={ :set utEnd [:len $profileName] }
+    :local limitStr [:pick $profileName ($utPos+4) $utEnd];
+    :local limitSec [:totime $limitStr];
+    
+    # Find -vl: (Validity Limit for paused mode)
+    :local vlPos [:find $profileName "-vl:"];
+    :local validitySec 0;
+    :if ($vlPos >= 0) do={
+      :local vlEnd [:find $profileName "-" ($vlPos+1)];
+      :if ($vlEnd < 0) do={ :set vlEnd [:len $profileName] }
+      :local vlStr [:pick $profileName ($vlPos+4) $vlEnd];
+      :set validitySec [:totime $vlStr];
+    }
+    
+    # 2. PARSE START DATE FROM COMMENT (-da:)
+    :local daPos [:find $comment "-da:"];
+    :if ($daPos >= 0) do={
+      :local daStr [:pick $comment ($daPos+4)];
+      # Extract date and time (format: "jan/26/2026 17:28:45")
+      :local spacePos [:find $daStr " "];
       :if ($spacePos >= 0) do={
-        :local dateStr [:pick $startStr 0 $spacePos];
-        :local timeStr [:pick $startStr ($spacePos + 1)];
+        :local startDate [:pick $daStr 0 $spacePos];
+        :local startTime [:pick $daStr ($spacePos+1)];
         
-        # Extract validity from profile name (e.g., v:1h or v:30d)
-        :local vPos [:find $profileName "v:"];
-        :local vEnd [:find $profileName "_" $vPos];
-        :if ($vEnd < 0) do={ :set vEnd [:len $profileName] }
-        :local valStr [:pick $profileName ($vPos + 2) $vEnd];
+        # 3. LOGIC: Check expiration
+        :local shouldExpire false;
         
-        # Convert validity to seconds
-        :local valSec 0;
-        :if ([:find $valStr "h"] >= 0) do={
-          :set valSec ([:tonum [:pick $valStr 0 [:find $valStr "h"]]] * 3600);
+        :if ($isPaused = "false") do={
+          # --- ELAPSED MODE ---
+          # Calculate wall-clock time difference
+          # RouterOS date parsing is complex, so we use a simplified approach:
+          # Convert start date/time to seconds since epoch, compare with now
+          :local startSec 0;
+          # Parse date (format: "jan/26/2026")
+          :local slash1 [:find $startDate "/"];
+          :local slash2 [:find $startDate "/" ($slash1+1)];
+          :if ($slash1 >= 0 && $slash2 >= 0) do={
+            :local monthStr [:pick $startDate 0 $slash1];
+            :local dayStr [:pick $startDate ($slash1+1) $slash2];
+            :local yearStr [:pick $startDate ($slash2+1)];
+            # Month mapping (simplified - only handles common months)
+            :local monthNum 1;
+            :if ($monthStr = "jan") do={ :set monthNum 1 }
+            :if ($monthStr = "feb") do={ :set monthNum 2 }
+            :if ($monthStr = "mar") do={ :set monthNum 3 }
+            :if ($monthStr = "apr") do={ :set monthNum 4 }
+            :if ($monthStr = "may") do={ :set monthNum 5 }
+            :if ($monthStr = "jun") do={ :set monthNum 6 }
+            :if ($monthStr = "jul") do={ :set monthNum 7 }
+            :if ($monthStr = "aug") do={ :set monthNum 8 }
+            :if ($monthStr = "sep") do={ :set monthNum 9 }
+            :if ($monthStr = "oct") do={ :set monthNum 10 }
+            :if ($monthStr = "nov") do={ :set monthNum 11 }
+            :if ($monthStr = "dec") do={ :set monthNum 12 }
+            # Calculate approximate seconds (simplified - doesn't account for leap years perfectly)
+            :local yearNum [:tonum $yearStr];
+            :local dayNum [:tonum $dayStr];
+            :local daysSinceEpoch (($yearNum - 1970) * 365 + ($monthNum - 1) * 30 + $dayNum);
+            :local startSec ($daysSinceEpoch * 86400);
+            # Add time component (format: "17:28:45")
+            :local colon1 [:find $startTime ":"];
+            :local colon2 [:find $startTime ":" ($colon1+1)];
+            :if ($colon1 >= 0 && $colon2 >= 0) do={
+              :local hourNum [:tonum [:pick $startTime 0 $colon1]];
+              :local minNum [:tonum [:pick $startTime ($colon1+1) $colon2]];
+              :local secNum [:tonum [:pick $startTime ($colon2+1)]];
+              :set startSec ($startSec + $hourNum * 3600 + $minNum * 60 + $secNum);
+            }
+            # Compare: if (now - start) > limit, expire
+            :local diffSec ($nowSec - $startSec);
+            :if ($diffSec > $limitSec) do={
+              :set shouldExpire true;
+            }
+          }
         } else={
-          :if ([:find $valStr "d"] >= 0) do={
-            :set valSec ([:tonum [:pick $valStr 0 [:find $valStr "d"]]] * 86400);
-          } else={
-            :if ([:find $valStr "m"] >= 0) do={
-              :set valSec ([:tonum [:pick $valStr 0 [:find $valStr "m"]]] * 60);
+          # --- PAUSED MODE ---
+          # Check uptime limit
+          :local uptimeStr ($uData->"uptime");
+          :local uptimeSec [:totime $uptimeStr];
+          :if ($uptimeSec > $limitSec) do={
+            :set shouldExpire true;
+          }
+          # Also check validity limit (wall-clock time)
+          :if ($validitySec > 0) do={
+            :local startSec 0;
+            :local slash1 [:find $startDate "/"];
+            :local slash2 [:find $startDate "/" ($slash1+1)];
+            :if ($slash1 >= 0 && $slash2 >= 0) do={
+              :local monthStr [:pick $startDate 0 $slash1];
+              :local monthNum 1;
+              :if ($monthStr = "jan") do={ :set monthNum 1 }
+              :if ($monthStr = "feb") do={ :set monthNum 2 }
+              :if ($monthStr = "mar") do={ :set monthNum 3 }
+              :if ($monthStr = "apr") do={ :set monthNum 4 }
+              :if ($monthStr = "may") do={ :set monthNum 5 }
+              :if ($monthStr = "jun") do={ :set monthNum 6 }
+              :if ($monthStr = "jul") do={ :set monthNum 7 }
+              :if ($monthStr = "aug") do={ :set monthNum 8 }
+              :if ($monthStr = "sep") do={ :set monthNum 9 }
+              :if ($monthStr = "oct") do={ :set monthNum 10 }
+              :if ($monthStr = "nov") do={ :set monthNum 11 }
+              :if ($monthStr = "dec") do={ :set monthNum 12 }
+              :local yearNum [:tonum [:pick $startDate ($slash2+1)]];
+              :local dayNum [:tonum [:pick $startDate ($slash1+1) $slash2]];
+              :local daysSinceEpoch (($yearNum - 1970) * 365 + ($monthNum - 1) * 30 + $dayNum);
+              :set startSec ($daysSinceEpoch * 86400);
+              :local colon1 [:find $startTime ":"];
+              :local colon2 [:find $startTime ":" ($colon1+1)];
+              :if ($colon1 >= 0 && $colon2 >= 0) do={
+                :local hourNum [:tonum [:pick $startTime 0 $colon1]];
+                :local minNum [:tonum [:pick $startTime ($colon1+1) $colon2]];
+                :local secNum [:tonum [:pick $startTime ($colon2+1)]];
+                :set startSec ($startSec + $hourNum * 3600 + $minNum * 60 + $secNum);
+              }
+              :local diffSec ($nowSec - $startSec);
+              :if ($diffSec > $validitySec) do={
+                :set shouldExpire true;
+              }
             }
           }
         }
         
-        # Calculate if expired (simplified: use uptime as proxy)
-        # RouterOS date parsing is complex, so we use a simpler approach:
-        # Set limit-uptime as a failsafe and rely on comment-based tracking
-        # For now, we'll let the native limit-uptime handle it if set
+        # 4. ACTION: Remove expired user
+        :if ($shouldExpire) do={
+          # Remove active sessions first
+          /ip hotspot active remove [find user=$user];
+          # Delete the user
+          /ip hotspot user remove $user;
+        }
       }
     }
   }
 }
 ''';
 
-    // Install scheduler to run cleanup every 5 minutes
+    // Install scheduler to run cleanup every 3 minutes (Mikroticket standard)
     final schedulerId = await c.findId('/system/scheduler/print', key: 'name', value: _cleanupSchedulerName);
     if (schedulerId == null) {
       await c.add('/system/scheduler/add', {
         'name': _cleanupSchedulerName,
         'start-time': 'startup',
-        'interval': '5m',
+        'interval': '3m',
         'on-event': cleanupSource,
       });
     } else {
       await c.setById('/system/scheduler/set', id: schedulerId, attrs: {
-        'interval': '5m',
+        'interval': '3m',
         'on-event': cleanupSource,
       });
     }
