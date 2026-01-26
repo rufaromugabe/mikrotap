@@ -1,6 +1,5 @@
 import '../models/hotspot_plan.dart';
 import '../services/routeros_api_client.dart';
-import '../../presentation/services/hotspot_provisioning_service.dart';
 
 class RouterPlanRepository {
   RouterPlanRepository({
@@ -29,8 +28,8 @@ class RouterPlanRepository {
   Future<void> addPlan(HotspotPlan plan) async {
     final attrs = plan.toRouterOsAttrs();
     
-    // MikroTicket always points to this specific script name
-    attrs['on-login'] = HotspotProvisioningService.monitorScriptName;
+    // STRICT: Must use the MikroTicket script name
+    attrs['on-login'] = 'mkt_sp_login_8';
     
     await client.add('/ip/hotspot/user/profile/add', attrs);
   }
@@ -43,7 +42,7 @@ class RouterPlanRepository {
     updateAttrs.remove('name');
     
     // Ensure on-login script is attached
-    updateAttrs['on-login'] = HotspotProvisioningService.monitorScriptName;
+    updateAttrs['on-login'] = 'mkt_sp_login_8';
     
     await client.setById(
       '/ip/hotspot/user/profile/set',
@@ -68,7 +67,7 @@ class RouterPlanRepository {
     return null;
   }
 
-  /// Finds a plan by its display name (without MT_ prefix)
+  /// Finds a plan by its display name (without profile_ prefix)
   Future<HotspotPlan?> findPlanByName(String name) async {
     final plans = await fetchPlans();
     return plans.firstWhere(

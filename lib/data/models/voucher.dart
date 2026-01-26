@@ -162,27 +162,24 @@ class Voucher {
       DateTime? firstUsedAt;
       String? soldByName;
 
-      // Parse MikroTicket Format: Mikroticket-dc:2026-01-26 17:28:45-ot:4
-      // Format can also include: -da:<Date>-mc:<MAC> (added by script on login)
-      
-      // Parse dc (Date Created) - stops at next -xx: pattern
-      final dcMatch = RegExp(r'-dc:([^-]+?)(?:-[a-z]{2}:|$)').firstMatch(comment);
-      if (dcMatch != null) {
-        createdAt = DateTime.tryParse(dcMatch.group(1)!.trim());
+      // Exact MikroTicket Regex Parsing
+      final dc = RegExp(r'-dc:([^-]+)').firstMatch(comment)?.group(1)?.trim();
+      final da = RegExp(r'-da:([^-]+)').firstMatch(comment)?.group(1)?.trim();
+      final ot = RegExp(r'-ot:([^-]+)').firstMatch(comment)?.group(1)?.trim();
+
+      // Parse Date Created
+      if (dc != null) {
+        createdAt = DateTime.tryParse(dc);
       }
 
-      // Parse da (Date Activated/First Used) - script adds this on login
-      // Stops at next -xx: pattern (like -mc:)
-      final daMatch = RegExp(r'-da:([^-]+?)(?:-[a-z]{2}:|$)').firstMatch(comment);
-      if (daMatch != null) {
-        // RouterOS date can be "jan/26/2026 17:28:45" or "2026-01-26 17:28:45"
-        // Try parsing directly first (for ISO format)
-        final dateStr = daMatch.group(1)!.trim();
-        firstUsedAt = DateTime.tryParse(dateStr);
+      // Parse Date Activated (script adds this on login)
+      if (da != null) {
+        // Try ISO format first
+        firstUsedAt = DateTime.tryParse(da);
         
-        // If that fails, try parsing RouterOS format (jan/26/2026)
+        // If that fails, try RouterOS format (jan/26/2026 17:28:45)
         if (firstUsedAt == null) {
-          final rosDateMatch = RegExp(r'(\w+)/(\d+)/(\d+)\s+(\d+):(\d+):(\d+)').firstMatch(dateStr);
+          final rosDateMatch = RegExp(r'(\w+)/(\d+)/(\d+)\s+(\d+):(\d+):(\d+)').firstMatch(da);
           if (rosDateMatch != null) {
             try {
               final monthMap = {
@@ -204,16 +201,10 @@ class Voucher {
         }
       }
 
-      // Parse ot (Operator Type/ID) - stops at next -xx: pattern
-      final otMatch = RegExp(r'-ot:([^-]+?)(?:-[a-z]{2}:|$)').firstMatch(comment);
-      if (otMatch != null) {
-        soldByName = otMatch.group(1)!.trim();
-      }
+      // Parse Operator
+      soldByName = ot;
 
-      // Note: -mc:<MAC> is also added by script but not stored in Voucher model
-
-      // Price is in the Profile Name for MikroTicket, not the comment.
-      // Extract from profile: profile_<Name>-se:-co:<Price>-pr:...
+      // Extract Price from Profile Name
       if (profile.isNotEmpty && profile.startsWith('profile_')) {
         final coMatch = RegExp(r'-co:([\d\.]+)').firstMatch(profile);
         if (coMatch != null) {
@@ -221,21 +212,8 @@ class Voucher {
         }
       }
 
-      // Use RouterOS .id as voucher id
-      final id = row['.id'] ?? '';
-
-      // Get RouterOS native properties
-      final uptime = row['uptime'] ?? '';
-      final bytesIn = row['bytes-in'];
-      final bytesOut = row['bytes-out'];
-
-      // Determine status based on uptime and firstUsedAt
-      final status = (uptime != '0s' && uptime.isNotEmpty) || firstUsedAt != null
-          ? VoucherStatus.used
-          : VoucherStatus.active;
-
       return Voucher(
-        id: id,
+        id: row['.id'] ?? '',
         routerId: routerId,
         username: username,
         password: password,
@@ -244,11 +222,10 @@ class Voucher {
         createdAt: createdAt ?? DateTime.now(),
         soldAt: createdAt,
         soldByName: soldByName,
-        firstUsedAt: firstUsedAt,
-        usageBytesIn: bytesIn != null ? int.tryParse(bytesIn) : null,
-        usageBytesOut: bytesOut != null ? int.tryParse(bytesOut) : null,
-        routerUptime: uptime.isNotEmpty ? uptime : null,
-        status: status,
+        firstUsedAt: firstUsedAt, // Activation date from script
+        status: (row['uptime'] != null && row['uptime'] != '0s' && row['uptime']!.isNotEmpty)
+            ? VoucherStatus.used
+            : VoucherStatus.active,
       );
     } catch (e) {
       // Parsing failed, return null

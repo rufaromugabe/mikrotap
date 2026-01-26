@@ -21,7 +21,7 @@ class HotspotPlan {
   });
 
   final String id; // RouterOS internal ID (.id)
-  final String name; // Display name (without MT_ prefix and config)
+  final String name; // Display name (without profile_ prefix and MikroTicket config)
   final double price;
   final String validity; // "1h", "30d", etc.
   final int dataLimitMb; // 0 means unlimited
@@ -37,126 +37,109 @@ class HotspotPlan {
   /// Format: profile_<Name>-se:-co:<Price>-pr:-lu:<UserLen>-lp:<PassLen>-ut:<Validity>-bt:<Data>-kt:<KeepTime>-nu:<Num>-np:<Num>-tp:<Type>
   /// This format MUST match exactly for mkt_sp_core_10 script to parse correctly
   String get routerOsProfileName {
-    // Sanitize name: remove spaces (MikroTicket format doesn't allow spaces in profile names)
     final safeName = name.replaceAll(' ', '');
-    
-    // Convert validity to RouterOS format (e.g., "1h" -> "0d 01:00:00", "1d" -> "1d 00:00:00")
-    String formatRouterOsTime(String v) {
-      if (v.endsWith('h')) {
-        final h = int.parse(v.replaceAll('h', ''));
-        return '0d ${h.toString().padLeft(2, '0')}:00:00';
-      } else if (v.endsWith('d')) {
-        final d = int.parse(v.replaceAll('d', ''));
-        return '${d}d 00:00:00';
-      } else if (v.endsWith('m')) {
-        final m = int.parse(v.replaceAll('m', ''));
-        final h = m ~/ 60;
-        final rm = m % 60;
-        return '0d ${h.toString().padLeft(2, '0')}:${rm.toString().padLeft(2, '0')}:00';
-      }
-      throw ArgumentError('Invalid validity format: $v');
-    }
-    
-    final utValue = formatRouterOsTime(validity);
-    
-    // kt:false = Elapsed Time (Script removes user based on clock)
-    // kt:true  = Paused Time (RouterOS handles uptime, Script handles validity limit)
+    final utValue = _toRosTime(validity);
     final kt = timeType == TicketType.elapsed ? 'false' : 'true';
     final tp = timeType == TicketType.elapsed ? '1' : '2';
     final bt = dataLimitMb > 0 ? '$dataLimitMb' : '';
+    final nu = charset == Charset.numeric ? 'true' : 'false';
 
-    // This string must be EXACT for the core script to find the values
-    // Format: profile_<Name>-se:-co:<Price>-pr:-lu:<UserLen>-lp:<PassLen>-ut:<Validity>-bt:<Data>-kt:<KeepTime>-nu:true-np:true-tp:<Type>
-    var profile = 'profile_$safeName-se:-co:$price-pr:-lu:$userLen-lp:$passLen-ut:$utValue-bt:$bt-kt:$kt-nu:true-np:true-tp:$tp';
+    var profile = 'profile_$safeName-se:-co:$price-pr:-lu:$userLen-lp:$passLen-ut:$utValue-bt:$bt-kt:$kt-nu:$nu-np:true-tp:$tp';
 
-    // 8. Validity Limit (vl) - Only for Paused mode (kt:true)
-    // Used to expire unused paused tickets after X days.
     if (timeType == TicketType.paused) {
-      String vl;
-      if (validity.endsWith('d')) {
-        final d = int.parse(validity.replaceAll('d', ''));
-        vl = '${d + 1}d 00:00:00'; // Validity + 1 day
-      } else if (validity.endsWith('h')) {
-        final h = int.parse(validity.replaceAll('h', ''));
-        // Calculate days based on hours (minimum 1 day, or hours/24 rounded up)
-        final days = (h / 24).ceil();
-        vl = '${days > 0 ? days : 1}d 00:00:00';
-      } else if (validity.endsWith('m')) {
-        final m = int.parse(validity.replaceAll('m', ''));
-        // Calculate days based on minutes (minimum 1 day, or minutes/1440 rounded up)
-        final days = (m / 1440).ceil();
-        vl = '${days > 0 ? days : 1}d 00:00:00';
-      } else {
-        throw ArgumentError('Invalid validity format for paused mode: $validity');
-      }
-      profile += '-vl:$vl';
+      profile += '-vl:${_calculateVl(validity)}';
     }
-
     return profile;
   }
 
-  /// Parses a RouterOS profile row into a HotspotPlan
+  /// Converts validity string to RouterOS time format
+  String _toRosTime(String v) {
+    if (v.endsWith('h')) {
+      final h = int.parse(v.replaceAll('h', ''));
+      return '0d ${h.toString().padLeft(2, '0')}:00:00';
+    } else if (v.endsWith('d')) {
+      final d = int.parse(v.replaceAll('d', ''));
+      return '${d}d 00:00:00';
+    } else if (v.endsWith('m')) {
+      final m = int.parse(v.replaceAll('m', ''));
+      final h = m ~/ 60;
+      final rm = m % 60;
+      return '0d ${h.toString().padLeft(2, '0')}:${rm.toString().padLeft(2, '0')}:00';
+    }
+    throw ArgumentError('Invalid validity format: $v');
+  }
+
+  /// Calculates validity limit for paused tickets
+  String _calculateVl(String validity) {
+    if (validity.endsWith('d')) {
+      final d = int.parse(validity.replaceAll('d', ''));
+      return '${d + 1}d 00:00:00';
+    } else if (validity.endsWith('h')) {
+      final h = int.parse(validity.replaceAll('h', ''));
+      final days = (h / 24).ceil();
+      return '${days > 0 ? days : 1}d 00:00:00';
+    } else if (validity.endsWith('m')) {
+      final m = int.parse(validity.replaceAll('m', ''));
+      final days = (m / 1440).ceil();
+      return '${days > 0 ? days : 1}d 00:00:00';
+    }
+    throw ArgumentError('Invalid validity format for paused mode: $validity');
+  }
+
+  /// Parses MikroTicket profile string
   /// Returns null if the profile name doesn't start with profile_ or parsing fails
   static HotspotPlan? fromRouterOs(Map<String, String> row) {
     final name = row['name'];
     if (name == null || !name.startsWith('profile_')) return null;
 
     try {
-      // Extract Name: profile_<Name>-se:
+      // Helper to parse the complex MikroTicket name using regex
+      // This is the only way to reliably split the MikroTicket string because
+      // RouterOS time formats (like 1d 00:00:00) contain dashes and spaces
+      String? _extractMktTag(String profileName, String tag) {
+        final match = RegExp('$tag([^-]+)(?:-[a-z]{2}:|\$)').firstMatch(profileName);
+        return match?.group(1);
+      }
+
+      // Extract Name
       final seIndex = name.indexOf('-se:');
       if (seIndex == -1) return null;
       final displayName = name.substring(8, seIndex); // Skip "profile_"
 
-      // Helper to find value between key and next dash
-      String? val(String key) {
-        final start = name.indexOf(key);
-        if (start == -1) return null;
-        final vStart = start + key.length;
-        // Find next flag starting with -
-        final nextFlag = RegExp(r'-[a-z]{2}:');
-        final match = nextFlag.firstMatch(name.substring(vStart));
-        if (match != null) {
-          return name.substring(vStart, vStart + match.start);
-        }
-        return name.substring(vStart);
-      }
-
-      // Parse all required fields
-      final priceStr = val('-co:');
+      // Parse Tags (all required, no fallbacks)
+      final priceStr = _extractMktTag(name, '-co:');
       if (priceStr == null) return null;
       final price = double.parse(priceStr);
 
-      final validityStr = val('-ut:');
+      final validityStr = _extractMktTag(name, '-ut:');
       if (validityStr == null) return null;
-      // Convert RouterOS time format back to short format (e.g., "0d 01:00:00" -> "1h")
+      // Convert RouterOS Time (0d 01:00:00) to Display (1h)
       final validity = _convertRouterOsTimeToShort(validityStr);
 
-      final dataStr = val('-bt:');
+      final dataStr = _extractMktTag(name, '-bt:');
       if (dataStr == null) return null;
       final dataLimitMb = dataStr.isEmpty ? 0 : int.parse(dataStr);
 
-      final kt = val('-kt:');
+      final kt = _extractMktTag(name, '-kt:');
       if (kt == null) return null;
       final timeType = kt == 'false' ? TicketType.elapsed : TicketType.paused;
 
-      final luStr = val('-lu:');
+      final luStr = _extractMktTag(name, '-lu:');
       if (luStr == null) return null;
       final userLen = int.parse(luStr);
 
-      final lpStr = val('-lp:');
+      final lpStr = _extractMktTag(name, '-lp:');
       if (lpStr == null) return null;
       final passLen = int.parse(lpStr);
 
-      // Note: nu is always 'true' in MikroTicket format, but we parse it for compatibility
-      final nu = val('-nu:');
+      final nu = _extractMktTag(name, '-nu:');
       if (nu == null) return null;
-      // In MikroTicket, nu:true means numeric charset
       final charset = nu == 'true' ? Charset.numeric : Charset.alphanumeric;
 
-      // Mode is inferred (not in MikroTicket format, default to userPass)
+      // Mode is inferred (not in MikroTicket format)
       final mode = TicketMode.userPass;
 
-      // Get RouterOS native properties
+      // Get RouterOS native properties (required)
       final id = row['.id']!;
       final rateLimit = row['rate-limit']!;
       final sharedUsers = int.parse(row['shared-users']!);
