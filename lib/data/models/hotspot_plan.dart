@@ -36,17 +36,20 @@ class HotspotPlan {
   final TicketType timeType; // paused or elapsed
 
   /// Generates the RouterOS profile name matching MikroTicket format.
-  /// Format: profile_<Name>-se:-co:<Price>-pr:-lu:<UserLen>-lp:<PassLen>-ut:<Validity>-bt:<Data>-kt:<KeepTime>-nu:<Num>-np:<Num>-tp:<Type>
+  /// Format: profile_<Name>-co:<Price>-pr:-lu:<UserLen>-lp:<PassLen>-ut:<Validity>-bt:<Data>-kt:<KeepTime>-nu:<Num>-np:<Num>-tp:<Type>
+  /// Tag sequence MUST be: Name -> co -> pr -> lu -> lp -> ut -> bt -> kt -> nu -> np -> tp
   /// This format MUST match exactly for mkt_sp_core_10 script to parse correctly
   String get routerOsProfileName {
     final safeName = name.replaceAll(' ', '');
     final utValue = _toRosTime(validity);
-    final kt = timeType == TicketType.elapsed ? 'false' : 'true';
+    // tp:1 is Elapsed, tp:2 is Paused
     final tp = timeType == TicketType.elapsed ? '1' : '2';
+    final kt = timeType == TicketType.elapsed ? 'false' : 'true';
     final bt = dataLimitMb > 0 ? '$dataLimitMb' : '';
     final nu = charset == Charset.numeric ? 'true' : 'false';
 
-    var profile = 'profile_$safeName-se:-co:$price-pr:-lu:$userLen-lp:$passLen-ut:$utValue-bt:$bt-kt:$kt-nu:$nu-np:true-tp:$tp';
+    // MikroTicket sequence: Name -> co -> pr -> lu -> lp -> ut -> bt -> kt -> nu -> np -> tp
+    var profile = 'profile_$safeName-co:$price-pr:-lu:$userLen-lp:$passLen-ut:$utValue-bt:$bt-kt:$kt-nu:$nu-np:true-tp:$tp';
 
     if (timeType == TicketType.paused) {
       profile += '-vl:${_calculateVl(validity)}';
@@ -107,10 +110,10 @@ class HotspotPlan {
         return match?.group(1);
       }
 
-      // Extract Name
-      final seIndex = name.indexOf('-se:');
-      if (seIndex == -1) return null;
-      final displayName = name.substring(8, seIndex); // Skip "profile_"
+      // Extract Name (everything after "profile_" until "-co:")
+      final coIndex = name.indexOf('-co:');
+      if (coIndex == -1) return null;
+      final displayName = name.substring(8, coIndex); // Skip "profile_"
 
       // Parse Tags (all required, no fallbacks)
       final priceStr = _extractMktTag(name, '-co:');
