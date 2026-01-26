@@ -11,7 +11,7 @@ class RouterVoucherRepository {
   final String routerId;
 
   /// Fetches all vouchers from the router
-  /// Only returns vouchers with comments starting with MT|
+  /// Only returns vouchers with comments starting with Mikroticket-
   Future<List<Voucher>> fetchVouchers() async {
     final rows = await client.printRows('/ip/hotspot/user/print');
     final vouchers = <Voucher>[];

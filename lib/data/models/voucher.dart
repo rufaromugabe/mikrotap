@@ -141,7 +141,8 @@ class Voucher {
   }
 
   /// Parses a RouterOS user row into a Voucher
-  /// Comment format: MT|b:<Batch>|p:<Price>|d:<Date>|by:<Operator>
+  /// Format: Mikroticket-dc:<Date>-ot:<Operator>
+  /// The script adds -da:<Date> and -mc:<MAC> on first login
   /// If name matches password, assume PIN mode for display
   static Voucher? fromRouterOs({
     required Map<String, String> row,
@@ -152,49 +153,77 @@ class Voucher {
     final comment = row['comment'] ?? '';
     final profile = row['profile'] ?? '';
 
-    // Only parse vouchers with MT comment prefix
-    if (!comment.startsWith('MT|')) return null;
+    // Only parse MikroTicket format
+    if (!comment.startsWith('Mikroticket-')) return null;
 
     try {
-      // Parse comment: MT|b:<Batch>|p:<Price>|d:<Date>|by:<Operator>
       double? price;
-      DateTime? soldAt;
+      DateTime? createdAt;
+      DateTime? firstUsedAt;
       String? soldByName;
 
-      final parts = comment.split('|');
-      for (final part in parts) {
-        if (part.startsWith('p:')) {
-          price = double.tryParse(part.substring(2));
-        } else if (part.startsWith('d:')) {
-          // Date format: YYYYMMDDHHmmss or ISO8601
-          final dateStr = part.substring(2);
-          soldAt = DateTime.tryParse(dateStr);
-          if (soldAt == null) {
-            // Try YYYYMMDDHHmmss format
-            if (dateStr.length == 14) {
-              try {
-                final year = int.parse(dateStr.substring(0, 4));
-                final month = int.parse(dateStr.substring(4, 6));
-                final day = int.parse(dateStr.substring(6, 8));
-                final hour = int.parse(dateStr.substring(8, 10));
-                final minute = int.parse(dateStr.substring(10, 12));
-                final second = int.parse(dateStr.substring(12, 14));
-                soldAt = DateTime(year, month, day, hour, minute, second);
-              } catch (_) {
-                // Ignore parse errors
-              }
+      // Parse MikroTicket Format: Mikroticket-dc:2026-01-26 17:28:45-ot:4
+      // Parse dc (Date Created)
+      final dcMatch = RegExp(r'-dc:([\d\-\s:]+)').firstMatch(comment);
+      if (dcMatch != null) {
+        createdAt = DateTime.tryParse(dcMatch.group(1)!.trim());
+      }
+
+      // Parse da (Date Activated/First Used) - script adds this on login
+      final daMatch = RegExp(r'-da:([\w\d\-\s:/]+)').firstMatch(comment);
+      if (daMatch != null) {
+        // RouterOS date can be "jan/26/2026 17:28:45" or "2026-01-26 17:28:45"
+        // Try parsing directly first (for ISO format)
+        final dateStr = daMatch.group(1)!.trim();
+        firstUsedAt = DateTime.tryParse(dateStr);
+        
+        // If that fails, try parsing RouterOS format (jan/26/2026)
+        if (firstUsedAt == null) {
+          final rosDateMatch = RegExp(r'(\w+)/(\d+)/(\d+)\s+(\d+):(\d+):(\d+)').firstMatch(dateStr);
+          if (rosDateMatch != null) {
+            try {
+              final monthMap = {
+                'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+                'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12,
+              };
+              final monthStr = rosDateMatch.group(1)!.toLowerCase();
+              final month = monthMap[monthStr] ?? 1;
+              final day = int.parse(rosDateMatch.group(2)!);
+              final year = int.parse(rosDateMatch.group(3)!);
+              final hour = int.parse(rosDateMatch.group(4)!);
+              final minute = int.parse(rosDateMatch.group(5)!);
+              final second = int.parse(rosDateMatch.group(6)!);
+              firstUsedAt = DateTime(year, month, day, hour, minute, second);
+            } catch (_) {
+              // Ignore parse errors
             }
           }
-        } else if (part.startsWith('by:')) {
-          soldByName = part.substring(3);
+        }
+      }
+
+      // Parse ot (Operator Type/ID)
+      final otMatch = RegExp(r'-ot:([^-]+)').firstMatch(comment);
+      if (otMatch != null) {
+        soldByName = otMatch.group(1);
+      }
+
+      // Price is in the Profile Name for MikroTicket, not the comment.
+      // Extract from profile: profile_<Name>-se:-co:<Price>-pr:...
+      if (profile.isNotEmpty && profile.startsWith('profile_')) {
+        final coMatch = RegExp(r'-co:([\d\.]+)').firstMatch(profile);
+        if (coMatch != null) {
+          price = double.tryParse(coMatch.group(1)!);
         }
       }
 
       // Use RouterOS .id as voucher id
       final id = row['.id'] ?? '';
 
-      // If username == password, it's likely a PIN voucher
-      // The profile should tell us the mode, but for now we'll infer from equality
+      // Determine status based on uptime and firstUsedAt
+      final uptime = row['uptime'] ?? '';
+      final status = (uptime != '0s' && uptime.isNotEmpty) || firstUsedAt != null
+          ? VoucherStatus.used
+          : VoucherStatus.active;
 
       return Voucher(
         id: id,
@@ -203,12 +232,11 @@ class Voucher {
         password: password,
         profile: profile.isEmpty ? null : profile,
         price: price,
-        createdAt: soldAt ?? DateTime.now(),
-        soldAt: soldAt,
+        createdAt: createdAt ?? DateTime.now(),
+        soldAt: createdAt,
         soldByName: soldByName,
-        // RouterOS doesn't store expiresAt in comment, it's in limit-uptime
-        // We'll need to parse limit-uptime separately if needed
-        status: VoucherStatus.active,
+        firstUsedAt: firstUsedAt,
+        status: status,
       );
     } catch (e) {
       // Parsing failed, return null
