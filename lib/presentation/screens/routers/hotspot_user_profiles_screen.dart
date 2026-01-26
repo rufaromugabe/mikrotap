@@ -5,9 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../providers/active_router_provider.dart';
+import '../../providers/voucher_providers.dart';
 import '../../../data/models/hotspot_plan.dart';
-import '../../../data/repositories/router_plan_repository.dart';
-import '../../../data/services/routeros_api_client.dart';
 import 'router_home_screen.dart';
 
 class HotspotUserProfilesScreen extends ConsumerStatefulWidget {
@@ -39,17 +38,16 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
       _status = null;
     });
 
-    final c = RouterOsApiClient(host: session.host, port: 8728, timeout: const Duration(seconds: 8));
+    final repo = ref.read(routerPlanRepoProvider);
     try {
-      await c.login(username: session.username, password: session.password);
-      final repo = RouterPlanRepository(client: c);
+      await repo.client.login(username: session.username, password: session.password);
       final plans = await repo.fetchPlans();
       plans.sort((a, b) => a.name.compareTo(b.name));
       setState(() => _plans = plans);
     } catch (e) {
       setState(() => _status = 'Load failed: $e');
     } finally {
-      await c.close();
+      repo.client.close();
       if (mounted) setState(() => _loading = false);
     }
   }
@@ -94,10 +92,9 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
         _status = null;
       });
 
-      final c = RouterOsApiClient(host: session.host, port: 8728, timeout: const Duration(seconds: 8));
+      final repo = ref.read(routerPlanRepoProvider);
       try {
-        await c.login(username: session.username, password: session.password);
-        final repo = RouterPlanRepository(client: c);
+        await repo.client.login(username: session.username, password: session.password);
 
         final plan = HotspotPlan(
           id: '', // Will be set by router
@@ -125,7 +122,7 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
       } catch (e) {
         setState(() => _status = 'Create failed: $e');
       } finally {
-        await c.close();
+        repo.client.close();
         if (mounted) setState(() => _loading = false);
       }
     }
@@ -396,10 +393,9 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
         _status = null;
       });
 
-      final c = RouterOsApiClient(host: session.host, port: 8728, timeout: const Duration(seconds: 8));
+      final repo = ref.read(routerPlanRepoProvider);
       try {
-        await c.login(username: session.username, password: session.password);
-        final repo = RouterPlanRepository(client: c);
+        await repo.client.login(username: session.username, password: session.password);
 
         final updatedPlan = plan.copyWith(
           name: name,
@@ -426,7 +422,7 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
       } catch (e) {
         setState(() => _status = 'Update failed: $e');
       } finally {
-        await c.close();
+        repo.client.close();
         if (mounted) setState(() => _loading = false);
       }
     }
@@ -645,10 +641,9 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
       _status = null;
     });
 
-    final c = RouterOsApiClient(host: session.host, port: 8728, timeout: const Duration(seconds: 8));
+    final repo = ref.read(routerPlanRepoProvider);
     try {
-      await c.login(username: session.username, password: session.password);
-      final repo = RouterPlanRepository(client: c);
+      await repo.client.login(username: session.username, password: session.password);
       await repo.deletePlan(plan.id);
       await _refresh();
       if (mounted) {
@@ -659,7 +654,7 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
     } catch (e) {
       setState(() => _status = 'Delete failed: $e');
     } finally {
-      await c.close();
+      repo.client.close();
       if (mounted) setState(() => _loading = false);
     }
   }

@@ -6,9 +6,9 @@ import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../data/models/hotspot_plan.dart';
-import '../../../data/repositories/router_plan_repository.dart';
 import '../../../data/services/routeros_api_client.dart';
 import '../../providers/auth_providers.dart';
+import '../../providers/voucher_providers.dart';
 import '../../services/voucher_generation_service.dart';
 
 class GenerateVouchersArgs {
@@ -62,14 +62,9 @@ class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen>
       _status = null;
     });
 
-    final client = RouterOsApiClient(
-      host: widget.args.host,
-      port: 8728,
-      timeout: const Duration(seconds: 8),
-    );
+    final repo = ref.read(routerPlanRepoProvider);
     try {
-      await client.login(username: widget.args.username, password: widget.args.password);
-      final repo = RouterPlanRepository(client: client);
+      await repo.client.login(username: widget.args.username, password: widget.args.password);
       final plans = await repo.fetchPlans();
       plans.sort((a, b) => a.name.compareTo(b.name));
       setState(() {
@@ -79,7 +74,7 @@ class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen>
     } catch (e) {
       setState(() => _status = 'Load failed: $e');
     } finally {
-      await client.close();
+      repo.client.close();
       if (mounted) setState(() => _loading = false);
     }
   }
@@ -101,11 +96,7 @@ class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen>
       _status = null;
     });
 
-    final client = RouterOsApiClient(
-      host: widget.args.host,
-      port: 8728,
-      timeout: const Duration(seconds: 8),
-    );
+    final client = ref.read(routerClientProvider);
 
     try {
       await client.login(username: widget.args.username, password: widget.args.password);
@@ -131,7 +122,7 @@ class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen>
     } catch (e) {
       setState(() => _status = 'Error: $e');
     } finally {
-      await client.close();
+      client.close();
       if (mounted) setState(() => _loading = false);
     }
   }
