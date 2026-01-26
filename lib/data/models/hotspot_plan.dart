@@ -96,8 +96,12 @@ class HotspotPlan {
       // Helper to parse the complex MikroTicket name using regex
       // This is the only way to reliably split the MikroTicket string because
       // RouterOS time formats (like 1d 00:00:00) contain dashes and spaces
+      // Note: Tags can be empty (e.g., -bt: or -pr:), so we use * instead of +
       String? _extractMktTag(String profileName, String tag) {
-        final match = RegExp('$tag([^-]+)(?:-[a-z]{2}:|\$)').firstMatch(profileName);
+        // Escape special regex characters in the tag
+        final escapedTag = tag.replaceAllMapped(RegExp(r'[.*+?^${}()|[\]\\]'), (m) => '\\${m[0]}');
+        // Match tag followed by zero or more non-dash chars, then either -XX: or end of string
+        final match = RegExp('$escapedTag([^-]*)(?:-[a-z]{2}:|\$)').firstMatch(profileName);
         return match?.group(1);
       }
 

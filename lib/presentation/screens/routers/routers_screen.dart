@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../providers/router_providers.dart';
 import 'routers_discovery_screen.dart';
 import 'saved_router_connect_screen.dart';
+import 'manual_router_add_screen.dart';
 
 class RoutersScreen extends ConsumerWidget {
   const RoutersScreen({super.key});
@@ -20,12 +21,21 @@ class RoutersScreen extends ConsumerWidget {
         title: const Text('Switch router'),
         actions: [
           IconButton(
+            tooltip: 'Add manually',
+            onPressed: () => context.push(ManualRouterAddScreen.routePath),
+            icon: const Icon(Icons.add),
+          ),
+          IconButton(
             tooltip: 'Discover (MNDP)',
             onPressed: () => context.go(RoutersDiscoveryScreen.routePath),
             icon: const Icon(Icons.radar),
           ),
           const SizedBox(width: 8),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => context.push(ManualRouterAddScreen.routePath),
+        child: const Icon(Icons.add),
       ),
       body: SafeArea(
         child: routers.when(

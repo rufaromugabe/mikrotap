@@ -11,6 +11,7 @@ import '../../../data/models/router_entry.dart';
 import '../../providers/active_router_provider.dart';
 import 'routers_discovery_screen.dart';
 import 'router_initialization_screen.dart';
+import 'router_home_screen.dart';
 
 class RouterDeviceDetailScreen extends ConsumerStatefulWidget {
   const RouterDeviceDetailScreen({super.key, required this.message});
@@ -105,7 +106,11 @@ class _RouterDeviceDetailScreenState extends ConsumerState<RouterDeviceDetailScr
       );
       await ref.read(routerRepositoryProvider).upsertRouter(entry);
 
-      // Set active and go directly to initialization.
+      // Check if hotspot server already exists
+      final hotspotRows = await client.printRows('/ip/hotspot/print');
+      final hasHotspot = hotspotRows.isNotEmpty;
+
+      // Set active session
       await ref.read(activeRouterProvider.notifier).set(
             ActiveRouterSession(
               routerId: entry.id,
@@ -116,14 +121,20 @@ class _RouterDeviceDetailScreenState extends ConsumerState<RouterDeviceDetailScr
             ),
           );
       if (!mounted) return;
-      context.go(
-        RouterInitializationScreen.routePath,
-        extra: RouterInitializationArgs(
-          host: host,
-          username: username,
-          password: password,
-        ),
-      );
+
+      // Skip initialization if hotspot already exists
+      if (hasHotspot) {
+        context.go(RouterHomeScreen.routePath);
+      } else {
+        context.go(
+          RouterInitializationScreen.routePath,
+          extra: RouterInitializationArgs(
+            host: host,
+            username: username,
+            password: password,
+          ),
+        );
+      }
     } catch (e) {
       setState(() => _apiStatus = 'Connect failed: $e');
     } finally {

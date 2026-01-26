@@ -13,6 +13,7 @@ import '../presentation/screens/routers/router_initialization_screen.dart';
 import '../presentation/screens/routers/routers_discovery_screen.dart';
 import '../presentation/screens/routers/routers_screen.dart';
 import '../presentation/screens/routers/saved_router_connect_screen.dart';
+import '../presentation/screens/routers/manual_router_add_screen.dart';
 import '../presentation/screens/routers/router_home_screen.dart';
 import '../presentation/screens/routers/hotspot_user_profiles_screen.dart';
 import '../presentation/screens/routers/portal_branding_screen.dart';
@@ -88,6 +89,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutersDiscoveryScreen.routePath,
         builder: (context, state) => const RoutersDiscoveryScreen(),
+      ),
+      GoRoute(
+        path: ManualRouterAddScreen.routePath,
+        builder: (context, state) => const ManualRouterAddScreen(),
       ),
       GoRoute(
         path: RouterDeviceDetailScreen.routePath,
