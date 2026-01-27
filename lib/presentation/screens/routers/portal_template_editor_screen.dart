@@ -154,14 +154,15 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
       });
 
       try {
-        final optimizedBytes = await ImageOptimizer.compressForRouter(
+        final result = await ImageOptimizer.compressForRouter(
           f.bytes!,
           isLogo: forLogo,
+          originalFilename: f.name,
         );
 
-        if (optimizedBytes.length > 150 * 1024) {
+        if (result.bytes.length > 150 * 1024) {
           setState(() {
-            _status = 'Image still too large after compression (${(optimizedBytes.length / 1024).toStringAsFixed(1)}KB). '
+            _status = 'Image still too large after compression (${(result.bytes.length / 1024).toStringAsFixed(1)}KB). '
                 'Maximum size is 150KB. Please use a smaller or simpler image.';
           });
           return;
@@ -169,13 +170,13 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
 
         setState(() {
           if (forLogo) {
-            _logoBytes = optimizedBytes;
-            _logoMime = ImageOptimizer.getMimeType(isLogo: true);
-            _logoFilename = 'logo.png';
+            _logoBytes = result.bytes;
+            _logoMime = result.mimeType;
+            _logoFilename = 'logo.${result.format}';
           } else {
-            _bgBytes = optimizedBytes;
-            _bgMime = ImageOptimizer.getMimeType(isLogo: false);
-            _bgFilename = 'background.jpg';
+            _bgBytes = result.bytes;
+            _bgMime = result.mimeType;
+            _bgFilename = 'background.${result.format}';
           }
           _status = null;
         });
@@ -308,12 +309,21 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
         final bgB64 = m['bgB64'] as String?;
         _logoBytes = (logoB64 == null || logoB64.isEmpty) ? null : base64Decode(logoB64);
         _bgBytes = (bgB64 == null || bgB64.isEmpty) ? null : base64Decode(bgB64);
-        // If we have bytes but no filename, set default filenames based on MIME type
+        // If we have bytes but no filename, detect format from bytes or use MIME type
         if (_logoBytes != null && _logoFilename == null) {
-          _logoFilename = 'logo.png';
+          final detectedFormat = ImageOptimizer.detectImageFormat(_logoBytes!);
+          final format = detectedFormat ?? 
+              (_logoMime?.contains('jpeg') == true ? 'jpg' : 
+               _logoMime?.contains('gif') == true ? 'gif' :
+               _logoMime?.contains('webp') == true ? 'webp' : 'png');
+          _logoFilename = 'logo.$format';
         }
         if (_bgBytes != null && _bgFilename == null) {
-          _bgFilename = 'background.jpg';
+          final detectedFormat = ImageOptimizer.detectImageFormat(_bgBytes!);
+          final format = detectedFormat ?? 
+              (_bgMime?.contains('jpeg') == true ? 'jpg' : 
+               _bgMime?.contains('webp') == true ? 'webp' : 'jpg');
+          _bgFilename = 'background.$format';
         }
       });
       // Initial load - no debounce needed

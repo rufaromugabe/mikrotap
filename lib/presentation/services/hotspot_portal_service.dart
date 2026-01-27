@@ -75,7 +75,21 @@ class PortalBranding {
   static String _getImageType(String? filename) {
     if (filename == null) return 'png';
     final ext = filename.split('.').last.toLowerCase();
-    return ext == 'jpg' ? 'jpeg' : ext;
+    
+    // Map common extensions to MIME type format
+    switch (ext) {
+      case 'jpg':
+      case 'jpeg':
+        return 'jpeg';
+      case 'png':
+      case 'gif':
+      case 'webp':
+      case 'bmp':
+      case 'svg':
+        return ext;
+      default:
+        return 'png'; // Default fallback
+    }
   }
 }
 
@@ -191,12 +205,48 @@ class HotspotPortalService {
     
     if (branding.logoBytes != null && branding.logoFilename != null) {
       try {
+        // Validate image bytes before writing
+        if (branding.logoBytes!.isEmpty) {
+          throw Exception('Logo bytes are empty');
+        }
+        
+        // Verify it's a valid image by checking magic numbers
+        final isValidImage = branding.logoBytes!.length >= 4 && (
+          // PNG
+          (branding.logoBytes![0] == 0x89 && branding.logoBytes![1] == 0x50 && 
+           branding.logoBytes![2] == 0x4E && branding.logoBytes![3] == 0x47) ||
+          // JPEG
+          (branding.logoBytes![0] == 0xFF && branding.logoBytes![1] == 0xD8) ||
+          // GIF
+          (branding.logoBytes![0] == 0x47 && branding.logoBytes![1] == 0x49 && 
+           branding.logoBytes![2] == 0x46 && branding.logoBytes![3] == 0x38) ||
+          // WebP
+          (branding.logoBytes!.length >= 12 &&
+           branding.logoBytes![0] == 0x52 && branding.logoBytes![1] == 0x49 && 
+           branding.logoBytes![2] == 0x46 && branding.logoBytes![3] == 0x46 &&
+           branding.logoBytes![8] == 0x57 && branding.logoBytes![9] == 0x45 && 
+           branding.logoBytes![10] == 0x42 && branding.logoBytes![11] == 0x50)
+        );
+        
+        if (!isValidImage) {
+          throw Exception('Logo bytes do not appear to be a valid image file');
+        }
+        
         final logoFile = File(path.join(imagesDir.path, branding.logoFilename!));
         await logoFile.writeAsBytes(branding.logoBytes!, flush: true);
         
         // Verify file was written correctly
-        if (!await logoFile.exists() || await logoFile.length() != branding.logoBytes!.length) {
-          throw Exception('Logo file write verification failed');
+        if (!await logoFile.exists()) {
+          throw Exception('Logo file was not created');
+        }
+        
+        final fileSize = await logoFile.length();
+        if (fileSize != branding.logoBytes!.length) {
+          throw Exception('Logo file size mismatch: expected ${branding.logoBytes!.length}, got $fileSize');
+        }
+        
+        if (fileSize == 0) {
+          throw Exception('Logo file is empty');
         }
         
         logoPath = 'images/${branding.logoFilename}';
@@ -207,12 +257,48 @@ class HotspotPortalService {
     
     if (branding.backgroundBytes != null && branding.backgroundFilename != null) {
       try {
+        // Validate image bytes before writing
+        if (branding.backgroundBytes!.isEmpty) {
+          throw Exception('Background bytes are empty');
+        }
+        
+        // Verify it's a valid image by checking magic numbers
+        final isValidImage = branding.backgroundBytes!.length >= 4 && (
+          // PNG
+          (branding.backgroundBytes![0] == 0x89 && branding.backgroundBytes![1] == 0x50 && 
+           branding.backgroundBytes![2] == 0x4E && branding.backgroundBytes![3] == 0x47) ||
+          // JPEG
+          (branding.backgroundBytes![0] == 0xFF && branding.backgroundBytes![1] == 0xD8) ||
+          // GIF
+          (branding.backgroundBytes![0] == 0x47 && branding.backgroundBytes![1] == 0x49 && 
+           branding.backgroundBytes![2] == 0x46 && branding.backgroundBytes![3] == 0x38) ||
+          // WebP
+          (branding.backgroundBytes!.length >= 12 &&
+           branding.backgroundBytes![0] == 0x52 && branding.backgroundBytes![1] == 0x49 && 
+           branding.backgroundBytes![2] == 0x46 && branding.backgroundBytes![3] == 0x46 &&
+           branding.backgroundBytes![8] == 0x57 && branding.backgroundBytes![9] == 0x45 && 
+           branding.backgroundBytes![10] == 0x42 && branding.backgroundBytes![11] == 0x50)
+        );
+        
+        if (!isValidImage) {
+          throw Exception('Background bytes do not appear to be a valid image file');
+        }
+        
         final bgFile = File(path.join(imagesDir.path, branding.backgroundFilename!));
         await bgFile.writeAsBytes(branding.backgroundBytes!, flush: true);
         
         // Verify file was written correctly
-        if (!await bgFile.exists() || await bgFile.length() != branding.backgroundBytes!.length) {
-          throw Exception('Background file write verification failed');
+        if (!await bgFile.exists()) {
+          throw Exception('Background file was not created');
+        }
+        
+        final fileSize = await bgFile.length();
+        if (fileSize != branding.backgroundBytes!.length) {
+          throw Exception('Background file size mismatch: expected ${branding.backgroundBytes!.length}, got $fileSize');
+        }
+        
+        if (fileSize == 0) {
+          throw Exception('Background file is empty');
         }
         
         backgroundPath = 'images/${branding.backgroundFilename}';
@@ -221,7 +307,7 @@ class HotspotPortalService {
       }
     }
 
-    // Generate all HTML/CSS content with file references (not data URIs)
+    // Generate all HTML/CSS/JSON content with file references (not data URIs)
     final loginHtml = _loginHtml(
       branding,
       previewMode: false,
@@ -237,6 +323,17 @@ class HotspotPortalService {
       branding,
       backgroundPath: backgroundPath,
     );
+    final errorHtml = _errorHtml(
+      branding,
+      logoPath: logoPath,
+      backgroundPath: backgroundPath,
+    );
+    final aloginHtml = _aloginHtml(
+      branding,
+      logoPath: logoPath,
+      backgroundPath: backgroundPath,
+    );
+    final apiJson = _apiJson(branding);
     final styleCss = _exactStyleCss(
       branding,
       false,
@@ -253,6 +350,15 @@ class HotspotPortalService {
     }
     if (statusHtml.isEmpty) {
       throw Exception('Generated status.html is empty');
+    }
+    if (errorHtml.isEmpty) {
+      throw Exception('Generated error.html is empty');
+    }
+    if (aloginHtml.isEmpty) {
+      throw Exception('Generated alogin.html is empty');
+    }
+    if (apiJson.isEmpty) {
+      throw Exception('Generated api.json is empty');
     }
     if (styleCss.isEmpty) {
       throw Exception('Generated style.css is empty');
@@ -310,6 +416,21 @@ class HotspotPortalService {
         'status.html',
       );
       await _writeTextFile(
+        path.join(portalDir.path, 'error.html'),
+        errorHtml,
+        'error.html',
+      );
+      await _writeTextFile(
+        path.join(portalDir.path, 'alogin.html'),
+        aloginHtml,
+        'alogin.html',
+      );
+      await _writeTextFile(
+        path.join(portalDir.path, 'api.json'),
+        apiJson,
+        'api.json',
+      );
+      await _writeTextFile(
         path.join(portalDir.path, 'md5.js'),
         md5Js,
         'md5.js',
@@ -336,6 +457,9 @@ class HotspotPortalService {
       path.join(portalDir.path, 'login.html'),
       path.join(portalDir.path, 'logout.html'),
       path.join(portalDir.path, 'status.html'),
+      path.join(portalDir.path, 'error.html'),
+      path.join(portalDir.path, 'alogin.html'),
+      path.join(portalDir.path, 'api.json'),
       path.join(portalDir.path, 'md5.js'),
       path.join(cssDir.path, 'style.css'),
     ];
@@ -1004,6 +1128,161 @@ function hexMD5(s) {
   return md5(s);
 }
 ''';
+  }
+
+  /// Generate api.json for captive portal detection and session status
+  /// Note: MikroTik variables are processed server-side, so they remain as-is in the template
+  static String _apiJson(PortalBranding b) {
+    // JSON values will be processed by RouterOS, so we keep MikroTik variables as-is
+    // RouterOS will replace them with actual values before serving
+    // Use \$ to escape $ in multi-line strings for MikroTik variables
+    return '''{
+  "status": "\$(if status)\$(status)\$(else)online\$(endif)",
+  "message": "\$(if error)\$(error)\$(else)Connected\$(endif)",
+  "title": "\$(if title)\$(title)\$(else)MikroTap Wi‑Fi\$(endif)",
+  "uptime": "\$(uptime)",
+  "bytes-in": "\$(bytes-in)",
+  "bytes-out": "\$(bytes-out)",
+  "bytes-in-nice": "\$(bytes-in-nice)",
+  "bytes-out-nice": "\$(bytes-out-nice)",
+  "ip": "\$(ip)",
+  "mac": "\$(mac)",
+  "username": "\$(username)",
+  "link-login": "\$(link-login)",
+  "link-login-only": "\$(link-login-only)",
+  "link-orig": "\$(link-orig)",
+  "link-orig-esc": "\$(link-orig-esc)",
+  "link-status": "\$(link-status)",
+  "link-logout": "\$(link-logout)"
+}''';
+  }
+
+  /// Generate error.html for error handling
+  static String _errorHtml(
+    PortalBranding b, {
+    String? logoPath,
+    String? backgroundPath,
+  }) {
+    final title = _escapeHtml(b.title);
+    final template = getTemplateById(b.themeId);
+    final primary = b.primaryHex.trim().isEmpty
+        ? template.defaultPrimaryHex
+        : b.primaryHex.trim();
+    final backgroundRef = backgroundPath ?? b.backgroundDataUri;
+    final bg = template.generateBackgroundCss(
+      primaryHex: primary,
+      backgroundDataUri: backgroundRef,
+    );
+    final card = template.generateCardCss(
+      primaryHex: primary,
+      opacity: b.cardOpacity,
+    );
+    final text = template.generateTextCss();
+    final muted = template.generateMutedCss();
+    final logo = logoPath ?? b.logoDataUri;
+    
+    return '''<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>$title - Error</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    body { margin:0; font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial; background:$bg; background-size: cover; background-position: center; color:$text; }
+    .wrap{ max-width:420px; margin:0 auto; padding:28px 16px; min-height:100vh; display:grid; place-items:center; }
+    .card{ width:100%; background:$card; border:1px solid rgba(148,163,184,.15); border-radius:18px; padding:18px; }
+    .btn{ width:100%; padding:12px 14px; border:0; border-radius:12px; background:$primary; color:white; font-weight:700; margin-top:12px; }
+    .muted{ color:$muted; font-size:13px; }
+    .brand{ display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+    .dot{ width:10px; height:10px; border-radius:999px; background:$primary; box-shadow:0 0 0 6px rgba(37,99,235,.18); }
+    .logo { width: 40px; height: 40px; border-radius: 12px; object-fit: cover; border: 1px solid rgba(148,163,184,.18); background: rgba(2,6,23,.35); }
+    .error { color: #ef4444; font-weight: 600; margin: 12px 0; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="brand">
+        ${logo == null ? '<div class="dot"></div>' : '<img class="logo" src="$logo" alt="logo" />'}
+        <div style="font-weight:800;">$title</div>
+      </div>
+      <h2 style="margin:0 0 8px;">Error</h2>
+      \$(if error)
+      <div class="error">\$(error)</div>
+      \$(else)
+      <div class="muted">An error occurred. Please try again.</div>
+      \$(endif)
+      <div style="height:12px;"></div>
+      <form action="\$(link-login)" method="post">
+        <button class="btn" type="submit">Return to Login</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>''';
+  }
+
+  /// Generate alogin.html for XML-based alternative login (for devices that prefer XML)
+  static String _aloginHtml(
+    PortalBranding b, {
+    String? logoPath,
+    String? backgroundPath,
+  }) {
+    final title = _escapeHtml(b.title);
+    final template = getTemplateById(b.themeId);
+    final primary = b.primaryHex.trim().isEmpty
+        ? template.defaultPrimaryHex
+        : b.primaryHex.trim();
+    final backgroundRef = backgroundPath ?? b.backgroundDataUri;
+    final bg = template.generateBackgroundCss(
+      primaryHex: primary,
+      backgroundDataUri: backgroundRef,
+    );
+    final logo = logoPath ?? b.logoDataUri;
+    
+    return '''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>$title</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    body { margin:0; font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial; background:$bg; background-size: cover; background-position: center; color:#fff; }
+    .wrap{ max-width:420px; margin:0 auto; padding:28px 16px; min-height:100vh; display:grid; place-items:center; }
+    .card{ width:100%; background:rgba(255,255,255,0.1); backdrop-filter: blur(10px); border:1px solid rgba(255,255,255,0.2); border-radius:18px; padding:24px; }
+    .input-text{ width:100%; padding:12px 14px; border:1px solid rgba(255,255,255,0.3); border-radius:12px; background:rgba(255,255,255,0.1); color:#fff; font-size:14px; margin-bottom:12px; box-sizing:border-box; }
+    .input-text::placeholder{ color:rgba(255,255,255,0.6); }
+    .btn{ width:100%; padding:12px 14px; border:0; border-radius:12px; background:$primary; color:white; font-weight:700; font-size:14px; cursor:pointer; }
+    .muted{ color:rgba(255,255,255,0.7); font-size:13px; text-align:center; margin-top:12px; }
+    .brand{ display:flex; align-items:center; gap:10px; margin-bottom:16px; justify-content:center; }
+    .logo { width: 50px; height: 50px; border-radius: 12px; object-fit: cover; border: 2px solid rgba(255,255,255,0.3); }
+    .error { color: #ff6b6b; font-size: 13px; margin-bottom: 12px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="brand">
+        ${logo == null ? '' : '<img class="logo" src="$logo" alt="logo" />'}
+        <div style="font-weight:800; font-size:20px;">$title</div>
+      </div>
+      \$(if error)
+      <div class="error">\$(error)</div>
+      \$(endif)
+      <form action="\$(link-login-only)" method="post">
+        <input type="text" name="username" class="input-text" placeholder="Username" value="\$(username)" autocomplete="off" />
+        <input type="password" name="password" class="input-text" placeholder="Password" autocomplete="off" />
+        <input type="hidden" name="dst" value="\$(link-orig)" />
+        <button type="submit" class="btn">Connect</button>
+      </form>
+      <div class="muted">Need help? Contact the attendant.</div>
+    </div>
+  </div>
+</body>
+</html>''';
   }
 
   static String _escapeHtml(String s) {
