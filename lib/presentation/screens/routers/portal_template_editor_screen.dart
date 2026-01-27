@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -55,6 +56,8 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
   String? _status;
   late final WebViewController _previewController;
   bool _previewReady = false;
+  Timer? _previewUpdateTimer;
+  bool _isUpdatingPreview = false;
 
   @override
   @override
@@ -68,8 +71,29 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
 
     _previewController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(const Color(0x00000000));
-    _previewReady = true;
+      ..setBackgroundColor(const Color(0x00000000))
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageFinished: (String url) {
+            // Mark preview as ready after page loads
+            if (mounted) {
+              setState(() {
+                _previewReady = true;
+                _isUpdatingPreview = false;
+              });
+            }
+          },
+          onWebResourceError: (WebResourceError error) {
+            debugPrint('WebView error: ${error.description}');
+            if (mounted) {
+              setState(() {
+                _isUpdatingPreview = false;
+              });
+            }
+          },
+        ),
+      );
+    _previewReady = false;
 
     void onChange() => _updatePreview();
     _titleCtrl.addListener(onChange);
@@ -81,6 +105,7 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
 
   @override
   void dispose() {
+    _previewUpdateTimer?.cancel();
     _tabController.dispose();
     _titleCtrl.dispose();
     _primaryCtrl.dispose();
@@ -170,11 +195,35 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
   }
 
   void _updatePreview() {
-    if (!_previewReady) return;
+    final session = ref.read(activeRouterProvider);
+    if (session == null) return;
+
+    // Cancel any pending update
+    _previewUpdateTimer?.cancel();
+
+    // Debounce updates to prevent excessive WebView reloads
+    // This prevents the WebView from freezing on Android
+    _previewUpdateTimer = Timer(const Duration(milliseconds: 300), () {
+      _performPreviewUpdate();
+    });
+  }
+
+  void _performPreviewUpdate() {
+    if (_isUpdatingPreview) {
+      // If already updating, schedule another update after current one completes
+      _previewUpdateTimer = Timer(const Duration(milliseconds: 500), () {
+        _performPreviewUpdate();
+      });
+      return;
+    }
+
     final session = ref.read(activeRouterProvider);
     if (session == null) return;
 
     try {
+      _isUpdatingPreview = true;
+      _previewReady = false;
+
       final template = HotspotPortalService.getTemplateById(_themeId);
       final branding = PortalBranding(
         title: _titleCtrl.text.trim().isEmpty ? session.routerName : _titleCtrl.text.trim(),
@@ -190,10 +239,20 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
       );
 
       final html = HotspotPortalService.buildLoginHtmlPreview(branding: branding);
-      _previewController.loadHtmlString(html);
+      
+      // Load the new HTML content
+      // Using a small delay to ensure previous operations complete
+      Future.microtask(() {
+        _previewController.loadHtmlString(html);
+      });
     } catch (e) {
       debugPrint('Error updating preview: $e');
-      setState(() => _status = 'Preview error: $e');
+      if (mounted) {
+        setState(() {
+          _status = 'Preview error: $e';
+          _isUpdatingPreview = false;
+        });
+      }
     }
   }
 
@@ -217,7 +276,8 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
         _bgBytes = null;
         _bgMime = null;
       });
-      _updatePreview();
+      // Initial load - no debounce needed
+      Future.microtask(() => _performPreviewUpdate());
       return;
     }
     try {
@@ -245,7 +305,8 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
         _logoBytes = (logoB64 == null || logoB64.isEmpty) ? null : base64Decode(logoB64);
         _bgBytes = (bgB64 == null || bgB64.isEmpty) ? null : base64Decode(bgB64);
       });
-      _updatePreview();
+      // Initial load - no debounce needed
+      Future.microtask(() => _performPreviewUpdate());
     } catch (_) {
       // ignore
     }
@@ -427,7 +488,11 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
                                         ),
                                         child: ClipRRect(
                                           borderRadius: BorderRadius.circular(8),
-                                          child: WebViewWidget(controller: _previewController),
+                                          child: _previewReady
+                                              ? WebViewWidget(controller: _previewController)
+                                              : const Center(
+                                                  child: CircularProgressIndicator(),
+                                                ),
                                         ),
                                       ),
                                     ),
@@ -523,7 +588,11 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
                                         ),
                                         child: ClipRRect(
                                           borderRadius: BorderRadius.circular(8),
-                                          child: WebViewWidget(controller: _previewController),
+                                          child: _previewReady
+                                              ? WebViewWidget(controller: _previewController)
+                                              : const Center(
+                                                  child: CircularProgressIndicator(),
+                                                ),
                                         ),
                                       ),
                                     ),

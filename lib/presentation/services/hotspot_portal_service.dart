@@ -333,7 +333,21 @@ class HotspotPortalService {
       primaryHex: primaryHex,
       backgroundDataUri: b.backgroundDataUri,
     );
-    final bgStyle = 'background: $bgCss !important; background-size: cover !important; background-position: center !important; background-repeat: no-repeat !important; min-height: 100vh;';
+    // Ensure background image doesn't repeat and covers properly on all screen sizes
+    final hasBackgroundImage = b.backgroundDataUri != null && b.backgroundDataUri!.isNotEmpty;
+    // For background images, completely remove 'fixed' from shorthand to prevent repeating on wide screens
+    String processedBgCss = bgCss;
+    if (hasBackgroundImage) {
+      // Remove 'fixed' from the end (most common case: "no-repeat fixed")
+      processedBgCss = processedBgCss.replaceAll(RegExp(r'\s+fixed\s*$'), '');
+      // Also handle any other occurrences
+      processedBgCss = processedBgCss.replaceAll(RegExp(r'\bfixed\b'), '');
+      processedBgCss = processedBgCss.trim();
+    }
+    // Use explicit properties to ensure proper control - don't duplicate width/max-width/min-height
+    final bgStyle = hasBackgroundImage
+        ? 'background: $processedBgCss !important; background-size: cover !important; background-position: center center !important; background-repeat: no-repeat !important; background-attachment: scroll !important;'
+        : 'background: $bgCss !important;';
 
     // 2. Handle Logo Data - ALWAYS use data URI (inlined in HTML)
     final logoSrc = b.logoDataUri ?? '';
@@ -375,7 +389,7 @@ class HotspotPortalService {
     
     return '''
 <!doctype html>
-<html lang="en">
+<html lang="en" style="margin:0; padding:0; width:100%; max-width:100%; overflow-x:hidden; box-sizing:border-box;">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
@@ -383,7 +397,7 @@ class HotspotPortalService {
     $cssLink
     ${previewMode ? '<style>$cssContent</style>' : ''}
 </head>
-<body style="$bgStyle; margin:0; padding:0; width:100%; min-height:100vh; overflow-x:hidden;${previewMode ? ' position: relative;' : ''}">
+<body style="$bgStyle; margin:0; padding:0; width:100%; max-width:100%; min-height:100vh; overflow-x:hidden; overflow-y:auto; box-sizing:border-box;${previewMode ? ' position: relative;' : ''}">
     $previewWrapperStart
     $ifChapStart
     <form name="sendin" action="$formAction" method="post" style="display:none">

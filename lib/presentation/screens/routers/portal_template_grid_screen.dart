@@ -194,7 +194,19 @@ class _TemplatePreviewCardState extends State<_TemplatePreviewCard> {
     super.initState();
     _previewController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(const Color(0x00000000));
+      ..setBackgroundColor(const Color(0x00000000))
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageFinished: (String url) {
+            // Mark preview as ready after page loads
+            if (mounted) {
+              setState(() {
+                _previewReady = true;
+              });
+            }
+          },
+        ),
+      );
     _loadPreview();
   }
 
@@ -208,7 +220,7 @@ class _TemplatePreviewCardState extends State<_TemplatePreviewCard> {
 
     final html = HotspotPortalService.buildLoginHtmlPreview(branding: branding, isGridPreview: true);
     _previewController.loadHtmlString(html);
-    setState(() => _previewReady = true);
+    // Don't set _previewReady here - wait for onPageFinished
   }
 
   @override
