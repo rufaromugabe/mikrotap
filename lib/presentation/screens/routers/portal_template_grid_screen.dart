@@ -206,7 +206,7 @@ class _TemplatePreviewCardState extends State<_TemplatePreviewCard> {
       themeId: widget.template.id,
     );
 
-    final html = HotspotPortalService.buildLoginHtmlPreview(branding: branding);
+    final html = HotspotPortalService.buildLoginHtmlPreview(branding: branding, isGridPreview: true);
     _previewController.loadHtmlString(html);
     setState(() => _previewReady = true);
   }

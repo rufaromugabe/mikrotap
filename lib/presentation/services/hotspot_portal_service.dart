@@ -183,8 +183,8 @@ class HotspotPortalService {
   /// Builds the same `login.html` content we upload to RouterOS, but with
   /// MikroTik variables replaced by placeholders so it can be rendered in-app
   /// (WebView preview).
-  static String buildLoginHtmlPreview({required PortalBranding branding}) {
-    return _loginHtml(branding, previewMode: true);
+  static String buildLoginHtmlPreview({required PortalBranding branding, bool isGridPreview = false}) {
+    return _loginHtml(branding, previewMode: true, isGridPreview: isGridPreview);
   }
 
   /// Chunked file upload to handle files larger than RouterOS API 64KB limit.
@@ -319,7 +319,7 @@ class HotspotPortalService {
   }
 
   // EXACT REPRODUCTION OF THE TABBED LOGIN HTML (MikroTicket style)
-  static String _loginHtml(PortalBranding b, {bool previewMode = false}) {
+  static String _loginHtml(PortalBranding b, {bool previewMode = false, bool isGridPreview = false}) {
     final title = _escapeHtml(b.title);
     final template = getTemplateById(b.themeId);
     final primaryHex = b.primaryHex.trim().isEmpty 
@@ -401,7 +401,7 @@ class HotspotPortalService {
     </script>
     $ifChapEnd
 
-    <div class="main"${previewMode ? ' style="padding-top: 300px;"' : ''}>
+    <div class="main"${previewMode ? (isGridPreview ? ' style="padding-top: 200px;"' : ' style="padding-top: 300px;"') : ''}>
         <div class="wrap animated fadeIn">
             ${showLogo ? '<div style="text-align: center; margin-bottom:15px;"><img src="$logoSrc" style="border-radius:10px; width:80px; height:80px; object-fit: cover; border: 2px solid rgba(255,255,255,0.2);" alt="logo"/></div>' : ''}
             
