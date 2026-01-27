@@ -12,7 +12,7 @@ import '../vouchers/generate_vouchers_screen.dart';
 import '../vouchers/vouchers_screen.dart';
 import 'hotspot_setup_wizard_screen.dart';
 import 'hotspot_user_profiles_screen.dart';
-import 'portal_branding_screen.dart';
+import 'portal_template_grid_screen.dart';
 import 'router_initialization_screen.dart';
 import 'routers_screen.dart';
 
@@ -153,7 +153,7 @@ class _RouterHomeScreenState extends ConsumerState<RouterHomeScreen> {
               subtitle: 'Design the login page and preview instantly in-app (WebView) — then apply to router.',
               icon: Icons.web,
               primaryLabel: 'Open Portal Designer',
-              onPrimary: () => context.push(PortalBrandingScreen.routePath),
+              onPrimary: () => context.push(PortalTemplateGridScreen.routePath),
               secondaryLabel: 'Hotspot setup',
               onSecondary: () {
                 context.push(

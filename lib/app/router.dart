@@ -16,7 +16,7 @@ import '../presentation/screens/routers/saved_router_connect_screen.dart';
 import '../presentation/screens/routers/manual_router_add_screen.dart';
 import '../presentation/screens/routers/router_home_screen.dart';
 import '../presentation/screens/routers/hotspot_user_profiles_screen.dart';
-import '../presentation/screens/routers/portal_branding_screen.dart';
+import '../presentation/screens/routers/portal_template_grid_screen.dart';
 import '../presentation/screens/vouchers/generate_vouchers_screen.dart';
 import '../presentation/screens/vouchers/print_vouchers_screen.dart';
 import '../presentation/screens/vouchers/vouchers_screen.dart';
@@ -124,8 +124,8 @@ final routerProvider = Provider<GoRouter>((ref) {
                 builder: (context, state) => const HotspotUserProfilesScreen(),
               ),
               GoRoute(
-                path: PortalBrandingScreen.routePath,
-                builder: (context, state) => const PortalBrandingScreen(),
+                path: PortalTemplateGridScreen.routePath,
+                builder: (context, state) => const PortalTemplateGridScreen(),
               ),
               GoRoute(
                 path: VouchersScreen.routePath,

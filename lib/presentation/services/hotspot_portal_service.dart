@@ -1,5 +1,9 @@
 import '../../data/services/routeros_api_client.dart';
+import '../templates/portal_template.dart';
+import '../templates/template_registry.dart';
 
+/// Legacy preset class for backward compatibility
+@Deprecated('Use PortalTemplate instead')
 class PortalThemePreset {
   const PortalThemePreset({
     required this.id,
@@ -28,6 +32,10 @@ class PortalBranding {
     this.themeId = 'midnight',
     this.logoDataUri,
     this.backgroundDataUri,
+    this.cardOpacity,
+    this.borderWidth,
+    this.borderStyle,
+    this.borderRadius,
   });
 
   final String title;
@@ -36,52 +44,39 @@ class PortalBranding {
   final String themeId;
   final String? logoDataUri; // e.g. data:image/png;base64,...
   final String? backgroundDataUri; // e.g. data:image/jpeg;base64,...
+  
+  // Template customization options
+  final double? cardOpacity; // 0.0 to 1.0
+  final double? borderWidth; // in pixels
+  final String? borderStyle; // solid, dashed, dotted, double, none
+  final double? borderRadius; // in pixels
 }
 
 class HotspotPortalService {
-  static const presets = <PortalThemePreset>[
+  /// Legacy presets for backward compatibility
+  @Deprecated('Use TemplateRegistry.all instead')
+  static List<PortalThemePreset> get presets => [
     PortalThemePreset(
       id: 'midnight',
       name: 'Midnight',
       primaryHex: '#2563EB',
-      bgCss:
-          'radial-gradient(1200px 800px at 20% 0%, rgba(37,99,235,.25), transparent), radial-gradient(900px 700px at 90% 10%, rgba(59,130,246,.18), transparent), #0b1220',
-      cardCss: 'rgba(15,23,42,.92)',
-      textCss: '#e2e8f0',
-      mutedCss: '#94a3b8',
-    ),
-    PortalThemePreset(
-      id: 'emerald',
-      name: 'Emerald',
-      primaryHex: '#10B981',
-      bgCss:
-          'radial-gradient(1200px 800px at 20% 0%, rgba(16,185,129,.20), transparent), radial-gradient(900px 700px at 90% 10%, rgba(34,197,94,.16), transparent), #061318',
-      cardCss: 'rgba(6,24,30,.92)',
-      textCss: '#e2e8f0',
-      mutedCss: '#9ca3af',
-    ),
-    PortalThemePreset(
-      id: 'sunrise',
-      name: 'Sunrise',
-      primaryHex: '#F97316',
-      bgCss:
-          'radial-gradient(1200px 800px at 20% 0%, rgba(249,115,22,.22), transparent), radial-gradient(900px 700px at 90% 10%, rgba(236,72,153,.14), transparent), #12080b',
-      cardCss: 'rgba(24,10,12,.92)',
-      textCss: '#f8fafc',
-      mutedCss: '#cbd5e1',
-    ),
-    PortalThemePreset(
-      id: 'light',
-      name: 'Light',
-      primaryHex: '#2563EB',
-      bgCss:
-          'radial-gradient(1000px 700px at 10% 0%, rgba(37,99,235,.15), transparent), radial-gradient(800px 600px at 90% 10%, rgba(59,130,246,.10), transparent), #f8fafc',
-      cardCss: 'rgba(255,255,255,.92)',
-      textCss: '#0f172a',
-      mutedCss: '#475569',
+      bgCss: '',
+      cardCss: '',
+      textCss: '',
+      mutedCss: '',
     ),
   ];
 
+  /// Get all available templates
+  static List<PortalTemplate> get templates => TemplateRegistry.all;
+
+  /// Get a template by ID
+  static PortalTemplate getTemplateById(String? id) {
+    return TemplateRegistry.getByIdOrDefault(id);
+  }
+
+  /// Legacy method for backward compatibility
+  @Deprecated('Use getTemplateById instead')
   static PortalThemePreset presetById(String? id) {
     return presets.firstWhere(
       (p) => p.id == id,
@@ -90,12 +85,12 @@ class HotspotPortalService {
   }
 
   static PortalBranding defaultBranding({required String routerName}) {
-    final p = presetById('midnight');
+    final template = getTemplateById('midnight');
     return PortalBranding(
       title: routerName.isEmpty ? 'MikroTap Wi‑Fi' : routerName,
-      primaryHex: p.primaryHex,
+      primaryHex: template.defaultPrimaryHex,
       supportText: 'Need help? Contact the attendant.',
-      themeId: p.id,
+      themeId: template.id,
     );
   }
 
@@ -326,20 +321,19 @@ class HotspotPortalService {
   // EXACT REPRODUCTION OF THE TABBED LOGIN HTML (MikroTicket style)
   static String _loginHtml(PortalBranding b, {bool previewMode = false}) {
     final title = _escapeHtml(b.title);
-    final preset = presetById(b.themeId);
+    final template = getTemplateById(b.themeId);
+    final primaryHex = b.primaryHex.trim().isEmpty 
+        ? template.defaultPrimaryHex 
+        : b.primaryHex.trim();
     
     // 1. Handle Colors and Backgrounds
     // ALWAYS use data URIs (Base64) for images - inlined directly in HTML
     // This avoids binary file upload issues and API limitations
-    String bgStyle;
-    if (b.backgroundDataUri != null && b.backgroundDataUri!.trim().isNotEmpty) {
-      // Use data URI directly (works in both preview and router mode)
-      // Fixed background that covers entire screen and doesn't repeat
-      bgStyle = 'background: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url(${b.backgroundDataUri}) center center / cover no-repeat fixed !important; min-height: 100vh;';
-    } else {
-      // Fallback to theme background
-      bgStyle = 'background: ${preset.bgCss} !important; min-height: 100vh;';
-    }
+    final bgCss = template.generateBackgroundCss(
+      primaryHex: primaryHex,
+      backgroundDataUri: b.backgroundDataUri,
+    );
+    final bgStyle = 'background: $bgCss !important; min-height: 100vh;';
 
     // 2. Handle Logo Data - ALWAYS use data URI (inlined in HTML)
     final logoSrc = b.logoDataUri ?? '';
@@ -358,7 +352,16 @@ class HotspotPortalService {
 
     // CSS: inline in preview, external link for router
     final cssLink = previewMode ? '' : '<link rel="stylesheet" href="css/style.css">';
-    final cssContent = previewMode ? _exactStyleCss(b, previewMode) : '';
+    final cssContent = previewMode 
+        ? template.generatePreviewCss(
+            primaryHex: primaryHex,
+            backgroundDataUri: b.backgroundDataUri,
+            cardOpacity: b.cardOpacity,
+            borderWidth: b.borderWidth,
+            borderStyle: b.borderStyle,
+            borderRadius: b.borderRadius,
+          )
+        : '';
 
     return '''
 <!doctype html>
@@ -452,134 +455,50 @@ class HotspotPortalService {
 
   // EXACT REPRODUCTION OF THE style.css (MikroTicket style)
   static String _exactStyleCss(PortalBranding b, bool previewMode) {
-    // For router mode, return the original CSS
+    final template = getTemplateById(b.themeId);
+    final primaryHex = b.primaryHex.trim().isEmpty 
+        ? template.defaultPrimaryHex 
+        : b.primaryHex.trim();
+    
+    // For router mode, return the template CSS
     if (!previewMode) {
-      return '''
-* { box-sizing: border-box; }
-body,html{min-height:100vh; margin:0; padding:0; font-family:sans-serif; width:100%; overflow-x:hidden;}
-body{ background: linear-gradient(135deg, #2c3e50, #000000); background-size: cover; background-position: center; background-attachment: fixed; display:flex; justify-content:center; align-items:center; width:100%;}
-.main { width: 100%; max-width: 100%; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
-.wrap{ width: 100%; max-width: 410px; padding: 20px; margin: 0 auto; }
-.form-container { text-align: center; background-color:rgba(255, 255, 255, 0.8); border-radius:10px; padding:20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); margin-bottom: 15px; width:100%; }
-.tabs { display: flex; justify-content: center; margin-bottom: 20px; list-style: none; padding: 0; border-bottom: 1px solid rgba(7, 7, 10, 0.2); width:100%; }
-.tab { flex: 1; text-align: center; padding: 10px; cursor: pointer; border-bottom: 1px solid #ccc; font-size: 20px; }
-.tab.active { border-bottom: 3px solid #07070a; }
-.hidden { display: none; }
-.input-text { width: 100%; border: 1px solid #07070a; height: 44px; padding: 10px; margin-bottom: 10px; border-radius: 10px; box-sizing: border-box; }
-.button-submit { background: #07070a; color: #fff; border: 0; width: 100%; height: 44px; border-radius: 10px; cursor: pointer; font-weight: bold; }
-.info { color: #07070a; margin-bottom: 15px; font-size: 14px; }
-.info.alert { color: #da3d41; font-weight: bold; }
-.info-section { margin-top: 15px; text-align: center; width:100%; }
-.info-content { background-color: rgba(255, 255, 255, 0.9); border-radius: 10px; padding: 15px 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); color: #07070a; font-size: 13px; line-height: 1.6; width:100%; }
-label { display: block; width:100%; }
-.animated { animation: fadeIn 0.5s; }
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-''';
+      return template.generateRouterCss(
+        primaryHex: primaryHex,
+        backgroundDataUri: b.backgroundDataUri,
+        cardOpacity: b.cardOpacity,
+        borderWidth: b.borderWidth,
+        borderStyle: b.borderStyle,
+        borderRadius: b.borderRadius,
+      );
     }
     
     // For preview mode, return optimized CSS with overflow control
-    return '''
-body, html { 
-    margin: 0; 
-    padding: 0; 
-    font-family: sans-serif; 
-    height: 100%; 
-    width: 100%; 
-    overflow: hidden; /* Fixes the scroll issue */
-}
-.main { 
-    height: 100vh; 
-    width: 100%; 
-    display: flex; 
-    justify-content: center; 
-    align-items: center; 
-    box-sizing: border-box;
-}
-.wrap { 
-    width: 90%; 
-    max-width: 380px; 
-    padding: 10px; 
-}
-.form-container { 
-    text-align: center; 
-    background-color: rgba(255, 255, 255, 0.95); 
-    border-radius: 12px; 
-    padding: 20px; 
-    box-shadow: 0 8px 20px rgba(0,0,0,0.3);
-    margin-bottom: 15px;
-}
-.info-section {
-    margin-top: 15px;
-    text-align: center;
-}
-.info-content {
-    background-color: rgba(255, 255, 255, 0.95);
-    border-radius: 12px;
-    padding: 15px 20px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-    color: #333;
-    font-size: 13px;
-    line-height: 1.7;
-}
-.tabs { 
-    display: flex; 
-    justify-content: center; 
-    margin-bottom: 15px; 
-    list-style: none; 
-    padding: 0; 
-    border-bottom: 1px solid #ddd;
-}
-.tab { 
-    flex: 1; 
-    text-align: center; 
-    padding: 10px; 
-    cursor: pointer; 
-    color: #888; 
-    font-weight: bold; 
-    font-size: 14px;
-}
-.tab.active { 
-    border-bottom: 3px solid #000; 
-    color: #000; 
-}
-.input-text { 
-    width: 100%; 
-    border: 1px solid #bbb; 
-    height: 42px; 
-    padding: 8px 12px; 
-    margin-bottom: 12px; 
-    border-radius: 8px; 
-    box-sizing: border-box; 
-    font-size: 16px;
-}
-.button-submit { 
-    background: #000; 
-    color: #fff; 
-    border: 0; 
-    width: 100%; 
-    height: 44px; 
-    border-radius: 8px; 
-    cursor: pointer; 
-    font-weight: bold; 
-    font-size: 16px;
-}
-.info { color: #444; margin-bottom: 10px; font-size: 13px; }
-.alert { color: #da3d41; font-weight: bold; }
-.animated { animation: fadeIn 0.4s ease-out; }
-@keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-''';
+    return template.generatePreviewCss(
+      primaryHex: primaryHex,
+      backgroundDataUri: b.backgroundDataUri,
+      cardOpacity: b.cardOpacity,
+      borderWidth: b.borderWidth,
+      borderStyle: b.borderStyle,
+      borderRadius: b.borderRadius,
+    );
   }
 
   static String _logoutHtml(PortalBranding b) {
     final title = _escapeHtml(b.title);
-    final preset = presetById(b.themeId);
-    final primary = b.primaryHex.trim().isEmpty ? preset.primaryHex : b.primaryHex.trim();
-    final bg = (b.backgroundDataUri != null && b.backgroundDataUri!.trim().isNotEmpty)
-        ? 'linear-gradient(rgba(2,6,23,.68), rgba(2,6,23,.68)), url(${b.backgroundDataUri})'
-        : preset.bgCss;
-    final card = preset.cardCss;
-    final text = preset.textCss;
-    final muted = preset.mutedCss;
+    final template = getTemplateById(b.themeId);
+    final primary = b.primaryHex.trim().isEmpty 
+        ? template.defaultPrimaryHex 
+        : b.primaryHex.trim();
+    final bg = template.generateBackgroundCss(
+      primaryHex: primary,
+      backgroundDataUri: b.backgroundDataUri,
+    );
+    final card = template.generateCardCss(
+      primaryHex: primary,
+      opacity: b.cardOpacity,
+    );
+    final text = template.generateTextCss();
+    final muted = template.generateMutedCss();
     final logo = (b.logoDataUri != null && b.logoDataUri!.trim().isNotEmpty) ? b.logoDataUri!.trim() : null;
     return '''
 <!doctype html>
@@ -621,14 +540,20 @@ body, html {
 
   static String _statusHtml(PortalBranding b) {
     final title = _escapeHtml(b.title);
-    final preset = presetById(b.themeId);
-    final bg = (b.backgroundDataUri != null && b.backgroundDataUri!.trim().isNotEmpty)
-        ? 'linear-gradient(rgba(2,6,23,.68), rgba(2,6,23,.68)), url(${b.backgroundDataUri})'
-        : preset.bgCss;
-    final card = preset.cardCss;
-    final text = preset.textCss;
-    final muted = preset.mutedCss;
-    final primary = b.primaryHex.trim().isEmpty ? preset.primaryHex : b.primaryHex.trim();
+    final template = getTemplateById(b.themeId);
+    final primary = b.primaryHex.trim().isEmpty 
+        ? template.defaultPrimaryHex 
+        : b.primaryHex.trim();
+    final bg = template.generateBackgroundCss(
+      primaryHex: primary,
+      backgroundDataUri: b.backgroundDataUri,
+    );
+    final card = template.generateCardCss(
+      primaryHex: primary,
+      opacity: b.cardOpacity,
+    );
+    final text = template.generateTextCss();
+    final muted = template.generateMutedCss();
     return '''
 <!doctype html>
 <html>
