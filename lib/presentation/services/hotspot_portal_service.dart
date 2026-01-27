@@ -1,6 +1,12 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 import '../../data/services/routeros_api_client.dart';
 import '../templates/portal_template.dart';
 import '../templates/template_registry.dart';
+import 'package:ftpconnect/ftpconnect.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as path;
 
 /// Legacy preset class for backward compatibility
 @Deprecated('Use PortalTemplate instead')
@@ -30,8 +36,10 @@ class PortalBranding {
     required this.primaryHex,
     required this.supportText,
     this.themeId = 'midnight',
-    this.logoDataUri,
-    this.backgroundDataUri,
+    this.logoBytes,
+    this.logoFilename,
+    this.backgroundBytes,
+    this.backgroundFilename,
     this.cardOpacity,
     this.borderWidth,
     this.borderStyle,
@@ -42,14 +50,33 @@ class PortalBranding {
   final String primaryHex; // e.g. #2563EB
   final String supportText;
   final String themeId;
-  final String? logoDataUri; // e.g. data:image/png;base64,...
-  final String? backgroundDataUri; // e.g. data:image/jpeg;base64,...
+  
+  // Binary image data (no more Base64!)
+  final Uint8List? logoBytes;
+  final String? logoFilename; // e.g. 'logo.png'
+  final Uint8List? backgroundBytes;
+  final String? backgroundFilename; // e.g. 'background.jpg'
 
   // Template customization options
   final double? cardOpacity; // 0.0 to 1.0
   final double? borderWidth; // in pixels
   final String? borderStyle; // solid, dashed, dotted, double, none
   final double? borderRadius; // in pixels
+  
+  // Helper to get data URI for preview only
+  String? get logoDataUri => logoBytes != null
+      ? 'data:image/${_getImageType(logoFilename)};base64,${base64Encode(logoBytes!)}'
+      : null;
+  
+  String? get backgroundDataUri => backgroundBytes != null
+      ? 'data:image/${_getImageType(backgroundFilename)};base64,${base64Encode(backgroundBytes!)}'
+      : null;
+  
+  static String _getImageType(String? filename) {
+    if (filename == null) return 'png';
+    final ext = filename.split('.').last.toLowerCase();
+    return ext == 'jpg' ? 'jpeg' : ext;
+  }
 }
 
 class HotspotPortalService {
@@ -94,78 +121,388 @@ class HotspotPortalService {
   static Future<void> applyDefaultPortal(
     RouterOsApiClient c, {
     required String routerName,
+    required String ftpHost,
+    required String ftpUsername,
+    required String ftpPassword,
+    int ftpPort = 21,
   }) async {
     final b = defaultBranding(routerName: routerName);
-    await applyPortal(c, branding: b);
+    await applyPortal(
+      c,
+      branding: b,
+      ftpHost: ftpHost,
+      ftpUsername: ftpUsername,
+      ftpPassword: ftpPassword,
+      ftpPort: ftpPort,
+    );
   }
 
-  static Future<void> applyPortal(
-    RouterOsApiClient c, {
+
+  static Future<String> buildPortalFolder({
     required PortalBranding branding,
   }) async {
     // Use static directory name for easier management (MikroTicket style)
     const directoryName = 'mikrotap_portal';
 
-    // Generate all HTML/CSS content
-    final loginHtml = _loginHtml(branding, previewMode: false);
-    final logoutHtml = _logoutHtml(branding);
-    final statusHtml = _statusHtml(branding);
-    final styleCss = _exactStyleCss(branding, false);
+    // Get temporary directory
+    final tempDir = await getTemporaryDirectory();
+    final portalDir = Directory(path.join(tempDir.path, directoryName));
+    
+    // Clean up existing folder if it exists (with error handling)
+    try {
+      if (await portalDir.exists()) {
+        await portalDir.delete(recursive: true);
+        // Small delay to ensure filesystem operations complete
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+    } catch (e) {
+      throw Exception('Failed to clean up existing portal directory: $e');
+    }
+
+    // Create main directory with verification
+    try {
+      await portalDir.create(recursive: true);
+      if (!await portalDir.exists()) {
+        throw Exception('Failed to create portal directory');
+      }
+    } catch (e) {
+      throw Exception('Failed to create portal directory: $e');
+    }
+
+    // Create subdirectories with verification
+    final cssDir = Directory(path.join(portalDir.path, 'css'));
+    final imagesDir = Directory(path.join(portalDir.path, 'images'));
+    
+    try {
+      await cssDir.create(recursive: true);
+      await imagesDir.create(recursive: true);
+      
+      // Verify directories were created
+      if (!await cssDir.exists() || !await imagesDir.exists()) {
+        throw Exception('Failed to create subdirectories');
+      }
+    } catch (e) {
+      throw Exception('Failed to create portal subdirectories: $e');
+    }
+
+    // Save images as actual files (no base64 encoding) with error handling
+    String? logoPath;
+    String? backgroundPath;
+    
+    if (branding.logoBytes != null && branding.logoFilename != null) {
+      try {
+        final logoFile = File(path.join(imagesDir.path, branding.logoFilename!));
+        await logoFile.writeAsBytes(branding.logoBytes!, flush: true);
+        
+        // Verify file was written correctly
+        if (!await logoFile.exists() || await logoFile.length() != branding.logoBytes!.length) {
+          throw Exception('Logo file write verification failed');
+        }
+        
+        logoPath = 'images/${branding.logoFilename}';
+      } catch (e) {
+        throw Exception('Failed to write logo file: $e');
+      }
+    }
+    
+    if (branding.backgroundBytes != null && branding.backgroundFilename != null) {
+      try {
+        final bgFile = File(path.join(imagesDir.path, branding.backgroundFilename!));
+        await bgFile.writeAsBytes(branding.backgroundBytes!, flush: true);
+        
+        // Verify file was written correctly
+        if (!await bgFile.exists() || await bgFile.length() != branding.backgroundBytes!.length) {
+          throw Exception('Background file write verification failed');
+        }
+        
+        backgroundPath = 'images/${branding.backgroundFilename}';
+      } catch (e) {
+        throw Exception('Failed to write background file: $e');
+      }
+    }
+
+    // Generate all HTML/CSS content with file references (not data URIs)
+    final loginHtml = _loginHtml(
+      branding,
+      previewMode: false,
+      logoPath: logoPath,
+      backgroundPath: backgroundPath,
+    );
+    final logoutHtml = _logoutHtml(
+      branding,
+      logoPath: logoPath,
+      backgroundPath: backgroundPath,
+    );
+    final statusHtml = _statusHtml(
+      branding,
+      backgroundPath: backgroundPath,
+    );
+    final styleCss = _exactStyleCss(
+      branding,
+      false,
+      backgroundPath: backgroundPath,
+    );
     final md5Js = _md5Js();
 
-    // 1. Ensure the directory exists by creating it explicitly
-    // RouterOS requires directories to be created with type=directory
-    final dirExists = await c.findOne(
-      '/file/print',
-      key: 'name',
-      value: directoryName,
-    );
-    if (dirExists == null) {
+    // Validate that all generated content is not empty
+    if (loginHtml.isEmpty) {
+      throw Exception('Generated login.html is empty');
+    }
+    if (logoutHtml.isEmpty) {
+      throw Exception('Generated logout.html is empty');
+    }
+    if (statusHtml.isEmpty) {
+      throw Exception('Generated status.html is empty');
+    }
+    if (styleCss.isEmpty) {
+      throw Exception('Generated style.css is empty');
+    }
+    if (md5Js.isEmpty) {
+      throw Exception('Generated md5.js is empty');
+    }
+
+    // Helper function to write text files with UTF-8 encoding and verification
+    Future<void> _writeTextFile(String filePath, String content, String fileType) async {
       try {
-        await c.add('/file/add', {'name': directoryName, 'type': 'directory'});
-        // Small delay to ensure directory is created
-        await Future.delayed(const Duration(milliseconds: 100));
+        final file = File(filePath);
+        
+        // Normalize line endings for consistent output
+        final normalizedContent = _normalizeLineEndings(content);
+        
+        // Write with explicit UTF-8 encoding and flush
+        await file.writeAsString(
+          normalizedContent,
+          encoding: utf8,
+          flush: true,
+          mode: FileMode.writeOnly,
+        );
+        
+        // Verify file was written correctly
+        if (!await file.exists()) {
+          throw Exception('$fileType file was not created');
+        }
+        
+        // Verify content matches (read back and compare)
+        final writtenContent = await file.readAsString(encoding: utf8);
+        if (writtenContent != normalizedContent) {
+          throw Exception('$fileType file content verification failed');
+        }
       } catch (e) {
-        // Directory might already exist or creation might fail, continue anyway
-        // RouterOS may auto-create directories when files are added
+        throw Exception('Failed to write $fileType file: $e');
       }
     }
 
-    // Also ensure css subdirectory exists
-    final cssDirName = '$directoryName/css';
-    final cssDirExists = await c.findOne(
-      '/file/print',
-      key: 'name',
-      value: cssDirName,
-    );
-    if (cssDirExists == null) {
+    // Write all files with explicit UTF-8 encoding and verification
+    try {
+      await _writeTextFile(
+        path.join(portalDir.path, 'login.html'),
+        loginHtml,
+        'login.html',
+      );
+      await _writeTextFile(
+        path.join(portalDir.path, 'logout.html'),
+        logoutHtml,
+        'logout.html',
+      );
+      await _writeTextFile(
+        path.join(portalDir.path, 'status.html'),
+        statusHtml,
+        'status.html',
+      );
+      await _writeTextFile(
+        path.join(portalDir.path, 'md5.js'),
+        md5Js,
+        'md5.js',
+      );
+      await _writeTextFile(
+        path.join(cssDir.path, 'style.css'),
+        styleCss,
+        'style.css',
+      );
+    } catch (e) {
+      // Clean up on error
       try {
-        await c.add('/file/add', {'name': cssDirName, 'type': 'directory'});
-        // Small delay to ensure directory is created
-        await Future.delayed(const Duration(milliseconds: 100));
-      } catch (e) {
-        // Ignore errors - RouterOS may auto-create directories when files are added
+        if (await portalDir.exists()) {
+          await portalDir.delete(recursive: true);
+        }
+      } catch (_) {
+        // Ignore cleanup errors
+      }
+      rethrow;
+    }
+
+    // Final verification that all required files exist
+    final requiredFiles = [
+      path.join(portalDir.path, 'login.html'),
+      path.join(portalDir.path, 'logout.html'),
+      path.join(portalDir.path, 'status.html'),
+      path.join(portalDir.path, 'md5.js'),
+      path.join(cssDir.path, 'style.css'),
+    ];
+    
+    for (final filePath in requiredFiles) {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        throw Exception('Required file missing: ${path.basename(filePath)}');
       }
     }
 
-    // 2. Upload files using the Chunked Method (handles files >64KB)
-    await _upsertFileChunked(c, '$directoryName/login.html', loginHtml);
-    await Future.delayed(const Duration(milliseconds: 200));
+    return portalDir.path;
+  }
 
-    await _upsertFileChunked(c, '$directoryName/logout.html', logoutHtml);
-    await Future.delayed(const Duration(milliseconds: 200));
+  /// Upload portal folder via FTP (fast and reliable transfer)
+  /// 
+  /// This method uploads the entire portal folder structure to the FTP server.
+  /// It handles directory creation and recursive file uploads automatically.
+  /// 
+  /// Example:
+  /// ```dart
+  /// await HotspotPortalService.uploadPortalViaFtp(
+  ///   portalFolderPath: '/tmp/mikrotap_portal',
+  ///   ftpHost: '192.168.1.1',
+  ///   ftpUsername: 'admin',
+  ///   ftpPassword: 'password',
+  ///   ftpPort: 21,
+  ///   remotePath: '/mikrotap_portal',
+  /// );
+  /// ```
+  static Future<void> uploadPortalViaFtp({
+    required String portalFolderPath,
+    required String ftpHost,
+    required String ftpUsername,
+    required String ftpPassword,
+    int ftpPort = 21,
+    String remotePath = '/mikrotap_portal',
+  }) async {
+    final ftp = FTPConnect(ftpHost, port: ftpPort, user: ftpUsername, pass: ftpPassword);
+    
+    try {
+      await ftp.connect();
+      
+      // Change to remote directory (create if needed)
+      try {
+        await ftp.changeDirectory(remotePath);
+      } catch (e) {
+        // Directory might not exist, try to create it
+        await ftp.makeDirectory(remotePath);
+        await ftp.changeDirectory(remotePath);
+      }
 
-    await _upsertFileChunked(c, '$directoryName/status.html', statusHtml);
-    await Future.delayed(const Duration(milliseconds: 200));
+      // Upload all files recursively
+      await _uploadDirectoryRecursive(ftp, Directory(portalFolderPath), remotePath);
+      
+      await ftp.disconnect();
+    } catch (e) {
+      await ftp.disconnect();
+      rethrow;
+    }
+  }
 
-    await _upsertFileChunked(c, '$directoryName/md5.js', md5Js);
-    await Future.delayed(const Duration(milliseconds: 200));
+  /// Recursively upload directory contents via FTP
+  static Future<void> _uploadDirectoryRecursive(
+    FTPConnect ftp,
+    Directory localDir,
+    String remoteBasePath,
+  ) async {
+    final entries = localDir.listSync(recursive: false);
+    
+    for (final entry in entries) {
+      if (entry is File) {
+        final relativePath = path.relative(entry.path, from: localDir.path);
+        final remoteDir = path.dirname(path.join(remoteBasePath, relativePath)).replaceAll('\\', '/');
+        
+        // Ensure parent directory exists on remote
+        if (remoteDir != remoteBasePath) {
+          try {
+            await ftp.changeDirectory(remoteDir);
+          } catch (e) {
+            // Create directory structure if needed
+            final parts = remoteDir.split('/').where((p) => p.isNotEmpty).toList();
+            String currentPath = '';
+            for (final part in parts) {
+              currentPath = currentPath.isEmpty ? '/$part' : '$currentPath/$part';
+              try {
+                await ftp.changeDirectory(currentPath);
+              } catch (e) {
+                await ftp.makeDirectory(currentPath);
+                await ftp.changeDirectory(currentPath);
+              }
+            }
+          }
+        } else {
+          // Change back to base directory
+          await ftp.changeDirectory(remoteBasePath);
+        }
+        
+        // Upload file (FTPConnect.uploadFile takes a File object)
+        await ftp.uploadFile(entry);
+      } else if (entry is Directory) {
+        final relativePath = path.relative(entry.path, from: localDir.path);
+        final remotePath = path.join(remoteBasePath, relativePath).replaceAll('\\', '/');
+        
+        // Create remote directory structure
+        final parts = remotePath.split('/').where((p) => p.isNotEmpty).toList();
+        String currentPath = '';
+        for (final part in parts) {
+          currentPath = currentPath.isEmpty ? '/$part' : '$currentPath/$part';
+          try {
+            await ftp.changeDirectory(currentPath);
+          } catch (e) {
+            await ftp.makeDirectory(currentPath);
+            await ftp.changeDirectory(currentPath);
+          }
+        }
+        
+        // Recursively upload subdirectory
+        await _uploadDirectoryRecursive(ftp, entry, remotePath);
+      }
+    }
+  }
 
-    // 3. Push CSS Directory
-    await _upsertFileChunked(c, '$directoryName/css/style.css', styleCss);
-    await Future.delayed(const Duration(milliseconds: 200));
+  /// Apply portal to router via FTP upload.
+  /// 
+  /// - Builds portal folder locally with actual image files (no base64 encoding)
+  /// - Uploads entire folder via FTP (fast and reliable)
+  /// - Configures hotspot profile to use the portal
+  /// 
+  /// Example:
+  /// ```dart
+  /// await HotspotPortalService.applyPortal(
+  ///   routerClient,
+  ///   branding: myBranding,
+  ///   ftpHost: '192.168.1.1',
+  ///   ftpUsername: 'admin',
+  ///   ftpPassword: 'password',
+  ///   ftpPort: 21,
+  ///   ftpRemotePath: '/mikrotap_portal',
+  /// );
+  /// ```
+  static Future<void> applyPortal(
+    RouterOsApiClient c, {
+    required PortalBranding branding,
+    required String ftpHost,
+    required String ftpUsername,
+    required String ftpPassword,
+    int ftpPort = 21,
+    String? ftpRemotePath,
+  }) async {
+    // Use static directory name for easier management (MikroTicket style)
+    const directoryName = 'mikrotap_portal';
 
-    // 4. Point Hotspot Profile to this folder
+    // Build portal folder locally
+    final portalFolderPath = await buildPortalFolder(branding: branding);
+    
+    // Upload via FTP
+    await uploadPortalViaFtp(
+      portalFolderPath: portalFolderPath,
+      ftpHost: ftpHost,
+      ftpUsername: ftpUsername,
+      ftpPassword: ftpPassword,
+      ftpPort: ftpPort,
+      remotePath: ftpRemotePath ?? '/$directoryName',
+    );
+    
+    // Point Hotspot Profile to this folder
     final profileId = await c.findId(
       '/ip/hotspot/profile/print',
       key: 'name',
@@ -197,169 +534,14 @@ class HotspotPortalService {
     );
   }
 
-  /// Chunked file upload to handle files larger than RouterOS API 64KB limit.
-  ///
-  /// Splits content into <35KB chunks, stores them in temporary scripts,
-  /// and concatenates them on the router side into the final file.
-  /// This is the MikroTicket-style approach for handling large portal files.
-  static Future<void> _upsertFileChunked(
-    RouterOsApiClient c,
-    String fileName,
-    String contents,
-  ) async {
-    const int chunkSize = 35000; // Safely under the 64KB API word limit
-
-    // If content fits in one chunk, use simple upload
-    if (contents.length <= chunkSize) {
-      await _upsertFileSimple(c, name: fileName, contents: contents);
-      return;
-    }
-
-    // Split content into chunks
-    final List<String> chunks = [];
-    for (var i = 0; i < contents.length; i += chunkSize) {
-      final end = (i + chunkSize > contents.length)
-          ? contents.length
-          : i + chunkSize;
-      chunks.add(contents.substring(i, end));
-    }
-
-    // 1. Create or clear the target file first
-    // RouterOS requires 'type=file' for file creation
-    // Note: RouterOS accepts forward slashes in filenames for subdirectories
-    final existingFile = await c.findOne(
-      '/file/print',
-      key: 'name',
-      value: fileName,
-    );
-    if (existingFile == null) {
-      try {
-        await c.add('/file/add', {
-          'name': fileName,
-          'type': 'file',
-          'contents': '',
-        });
-      } catch (e) {
-        // If file creation fails, it might be due to invalid filename format
-        // RouterOS might require the directory to exist first
-        throw RouterOsApiException(
-          'Failed to create file "$fileName": $e. '
-          'Ensure the directory structure exists.',
-        );
-      }
-    } else {
-      await c.setById(
-        '/file/set',
-        id: existingFile['.id']!,
-        attrs: {'contents': ''},
-      );
-    }
-
-    // 2. Process each chunk using RouterOS scripts as temporary buffers
-    for (int i = 0; i < chunks.length; i++) {
-      final scriptName = 'mikrotap_chunk_$i';
-
-      // Clean up old script if it exists
-      final oldScriptId = await c.findId(
-        '/system/script/print',
-        key: 'name',
-        value: scriptName,
-      );
-      if (oldScriptId != null) {
-        await c.removeById('/system/script/remove', id: oldScriptId);
-      }
-
-      // Upload chunk to script source (scripts can hold larger data)
-      await c.add('/system/script/add', {
-        'name': scriptName,
-        'source': chunks[i],
-        'policy': 'read,write,policy,test',
-      });
-
-      // Create a script that appends this chunk to the file
-      // RouterOS script: read current file, append chunk, write back
-      final appendScriptName = 'mikrotap_append_$i';
-      final appendScriptId = await c.findId(
-        '/system/script/print',
-        key: 'name',
-        value: appendScriptName,
-      );
-      if (appendScriptId != null) {
-        await c.removeById('/system/script/remove', id: appendScriptId);
-      }
-
-      // Escape quotes in fileName for RouterOS script
-      final escapedFileName = fileName.replaceAll('"', '\\"');
-      final escapedScriptName = scriptName.replaceAll('"', '\\"');
-
-      // RouterOS script to append chunk to file
-      // Note: $ in RouterOS scripts needs escaping as \$ in Dart strings
-      final appendScriptSource =
-          '''
-:local current [/file get [find name="$escapedFileName"] contents];
-:local chunk [/system script get [find name="$escapedScriptName"] source];
-/file set [find name="$escapedFileName"] contents=(\$current . \$chunk);
-''';
-
-      await c.add('/system/script/add', {
-        'name': appendScriptName,
-        'source': appendScriptSource,
-        'policy': 'read,write,policy,test',
-      });
-
-      // Run the append script
-      final appendId = await c.findId(
-        '/system/script/print',
-        key: 'name',
-        value: appendScriptName,
-      );
-      if (appendId != null) {
-        await c.command(['/system/script/run', '=.id=$appendId']);
-      }
-
-      // Cleanup both scripts
-      final chunkScriptId = await c.findId(
-        '/system/script/print',
-        key: 'name',
-        value: scriptName,
-      );
-      if (chunkScriptId != null) {
-        await c.removeById('/system/script/remove', id: chunkScriptId);
-      }
-      if (appendId != null) {
-        await c.removeById('/system/script/remove', id: appendId);
-      }
-
-      // Small delay to let the Router CPU process
-      await Future.delayed(const Duration(milliseconds: 150));
-    }
-  }
-
-  /// Simple file upload for small files (fits in one API call).
-  static Future<void> _upsertFileSimple(
-    RouterOsApiClient c, {
-    required String name,
-    required String contents,
-  }) async {
-    final rows = await c.printRows('/file/print', queries: ['?name=$name']);
-    final id = rows.isNotEmpty ? rows.first['.id'] : null;
-    if (id == null || id.isEmpty) {
-      // RouterOS requires 'type=file' for file creation
-      await c.add('/file/add', {
-        'name': name,
-        'type': 'file',
-        'contents': contents,
-      });
-      return;
-    }
-    await c.setById('/file/set', id: id, attrs: {'contents': contents});
-  }
 
   // EXACT REPRODUCTION OF THE TABBED LOGIN HTML (MikroTicket style)
   static String _loginHtml(
     PortalBranding b, {
     bool previewMode = false,
     bool isGridPreview = false,
+    String? logoPath,
+    String? backgroundPath,
   }) {
     final title = _escapeHtml(b.title);
     final template = getTemplateById(b.themeId);
@@ -368,15 +550,14 @@ class HotspotPortalService {
         : b.primaryHex.trim();
 
     // 1. Handle Colors and Backgrounds
-    // ALWAYS use data URIs (Base64) for images - inlined directly in HTML
-    // This avoids binary file upload issues and API limitations
+    // Use file paths when provided (FTP upload), otherwise fall back to data URIs (preview/legacy)
+    final backgroundRef = backgroundPath ?? b.backgroundDataUri;
     final bgCss = template.generateBackgroundCss(
       primaryHex: primaryHex,
-      backgroundDataUri: b.backgroundDataUri,
+      backgroundDataUri: backgroundRef,
     );
     // Ensure background image doesn't repeat and covers properly on all screen sizes
-    final hasBackgroundImage =
-        b.backgroundDataUri != null && b.backgroundDataUri!.isNotEmpty;
+    final hasBackgroundImage = backgroundRef != null && backgroundRef.isNotEmpty;
     // For background images, completely remove 'fixed' from shorthand to prevent repeating on wide screens
     String processedBgCss = bgCss;
     if (hasBackgroundImage) {
@@ -391,9 +572,9 @@ class HotspotPortalService {
         ? 'background: $processedBgCss !important; background-size: cover !important; background-position: center center !important; background-repeat: no-repeat !important; background-attachment: scroll !important;'
         : 'background: $bgCss !important;';
 
-    // 2. Handle Logo Data - ALWAYS use data URI (inlined in HTML)
-    final logoSrc = b.logoDataUri ?? '';
-    final showLogo = b.logoDataUri != null && b.logoDataUri!.isNotEmpty;
+    // 2. Handle Logo Data - Use file path when provided (FTP upload), otherwise data URI (preview)
+    final logoSrc = logoPath ?? b.logoDataUri ?? '';
+    final showLogo = logoSrc.isNotEmpty;
 
     // 3. Mock Variables for Preview
     final formAction = previewMode ? '#' : r'$(link-login-only)';
@@ -413,7 +594,7 @@ class HotspotPortalService {
     final cssContent = previewMode
         ? template.generatePreviewCss(
             primaryHex: primaryHex,
-            backgroundDataUri: b.backgroundDataUri,
+            backgroundDataUri: backgroundRef,
             cardOpacity: b.cardOpacity,
             borderWidth: b.borderWidth,
             borderStyle: b.borderStyle,
@@ -528,17 +709,24 @@ class HotspotPortalService {
   }
 
   // EXACT REPRODUCTION OF THE style.css (MikroTicket style)
-  static String _exactStyleCss(PortalBranding b, bool previewMode) {
+  static String _exactStyleCss(
+    PortalBranding b,
+    bool previewMode, {
+    String? backgroundPath,
+  }) {
     final template = getTemplateById(b.themeId);
     final primaryHex = b.primaryHex.trim().isEmpty
         ? template.defaultPrimaryHex
         : b.primaryHex.trim();
 
+    // Use file path when provided (FTP upload), otherwise fall back to data URI (preview/legacy)
+    final backgroundRef = backgroundPath ?? b.backgroundDataUri;
+
     // For router mode, return the template CSS
     if (!previewMode) {
       return template.generateRouterCss(
         primaryHex: primaryHex,
-        backgroundDataUri: b.backgroundDataUri,
+        backgroundDataUri: backgroundRef,
         cardOpacity: b.cardOpacity,
         borderWidth: b.borderWidth,
         borderStyle: b.borderStyle,
@@ -549,7 +737,7 @@ class HotspotPortalService {
     // For preview mode, return optimized CSS with overflow control
     return template.generatePreviewCss(
       primaryHex: primaryHex,
-      backgroundDataUri: b.backgroundDataUri,
+      backgroundDataUri: backgroundRef,
       cardOpacity: b.cardOpacity,
       borderWidth: b.borderWidth,
       borderStyle: b.borderStyle,
@@ -557,15 +745,20 @@ class HotspotPortalService {
     );
   }
 
-  static String _logoutHtml(PortalBranding b) {
+  static String _logoutHtml(
+    PortalBranding b, {
+    String? logoPath,
+    String? backgroundPath,
+  }) {
     final title = _escapeHtml(b.title);
     final template = getTemplateById(b.themeId);
     final primary = b.primaryHex.trim().isEmpty
         ? template.defaultPrimaryHex
         : b.primaryHex.trim();
+    final backgroundRef = backgroundPath ?? b.backgroundDataUri;
     final bg = template.generateBackgroundCss(
       primaryHex: primary,
-      backgroundDataUri: b.backgroundDataUri,
+      backgroundDataUri: backgroundRef,
     );
     final card = template.generateCardCss(
       primaryHex: primary,
@@ -573,9 +766,7 @@ class HotspotPortalService {
     );
     final text = template.generateTextCss();
     final muted = template.generateMutedCss();
-    final logo = (b.logoDataUri != null && b.logoDataUri!.trim().isNotEmpty)
-        ? b.logoDataUri!.trim()
-        : null;
+    final logo = logoPath ?? b.logoDataUri;
     return '''
 <!doctype html>
 <html>
@@ -614,15 +805,19 @@ class HotspotPortalService {
 ''';
   }
 
-  static String _statusHtml(PortalBranding b) {
+  static String _statusHtml(
+    PortalBranding b, {
+    String? backgroundPath,
+  }) {
     final title = _escapeHtml(b.title);
     final template = getTemplateById(b.themeId);
     final primary = b.primaryHex.trim().isEmpty
         ? template.defaultPrimaryHex
         : b.primaryHex.trim();
+    final backgroundRef = backgroundPath ?? b.backgroundDataUri;
     final bg = template.generateBackgroundCss(
       primaryHex: primary,
-      backgroundDataUri: b.backgroundDataUri,
+      backgroundDataUri: backgroundRef,
     );
     final card = template.generateCardCss(
       primaryHex: primary,
@@ -812,11 +1007,20 @@ function hexMD5(s) {
   }
 
   static String _escapeHtml(String s) {
+    // Escape & first to avoid double-escaping existing entities
     return s
         .replaceAll('&', '&amp;')
         .replaceAll('<', '&lt;')
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#39;');
+  }
+
+  /// Normalize line endings to ensure consistent output across platforms
+  static String _normalizeLineEndings(String content) {
+    // Convert all line endings to \n, then ensure consistent \n usage
+    return content
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n');
   }
 }

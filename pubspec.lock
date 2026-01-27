@@ -632,6 +632,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.0.0"
+  ftpconnect:
+    dependency: "direct main"
+    description:
+      name: ftpconnect
+      sha256: a9ebac24a50b17dc9a1101fff85c3729fd8c16ec41346b0fa6e549616e23b2f6
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.0.10"
   glob:
     dependency: transitive
     description:
@@ -905,7 +913,7 @@ packages:
     source: hosted
     version: "2.2.0"
   path:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: path
       sha256: "75cca69d1490965be98c73ceaea117e8a04dd21217b37b292c9ddbec0d955bc5"

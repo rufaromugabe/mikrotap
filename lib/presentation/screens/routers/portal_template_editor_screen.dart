@@ -41,8 +41,10 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
   late String _themeId;
   Uint8List? _logoBytes;
   String? _logoMime;
+  String? _logoFilename;
   Uint8List? _bgBytes;
   String? _bgMime;
+  String? _bgFilename;
 
   // Template customization
   double _cardOpacity = 0.92;
@@ -115,12 +117,6 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
 
   String _prefsKey(String routerId) => 'mikrotap.portal.branding.v1.$routerId';
 
-  String? _dataUri(Uint8List? bytes, String? mime) {
-    if (bytes == null || bytes.isEmpty) return null;
-    final m = (mime == null || mime.isEmpty) ? 'image/png' : mime;
-    return 'data:$m;base64,${base64Encode(bytes)}';
-  }
-
 
   Future<void> _pickImage({required bool forLogo}) async {
     try {
@@ -175,9 +171,11 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
           if (forLogo) {
             _logoBytes = optimizedBytes;
             _logoMime = ImageOptimizer.getMimeType(isLogo: true);
+            _logoFilename = 'logo.png';
           } else {
             _bgBytes = optimizedBytes;
             _bgMime = ImageOptimizer.getMimeType(isLogo: false);
+            _bgFilename = 'background.jpg';
           }
           _status = null;
         });
@@ -230,8 +228,10 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
         primaryHex: _primaryCtrl.text.trim().isEmpty ? template.defaultPrimaryHex : _primaryCtrl.text.trim(),
         supportText: _supportCtrl.text.trim().isEmpty ? 'Need help? Contact the attendant.' : _supportCtrl.text.trim(),
         themeId: _themeId,
-        logoDataUri: _dataUri(_logoBytes, _logoMime),
-        backgroundDataUri: _dataUri(_bgBytes, _bgMime),
+        logoBytes: _logoBytes,
+        logoFilename: _logoFilename,
+        backgroundBytes: _bgBytes,
+        backgroundFilename: _bgFilename,
         cardOpacity: _cardOpacity,
         borderWidth: _borderWidth,
         borderStyle: _borderStyle,
@@ -273,8 +273,10 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
         _borderRadius = 12.0;
         _logoBytes = null;
         _logoMime = null;
+        _logoFilename = null;
         _bgBytes = null;
         _bgMime = null;
+        _bgFilename = null;
       });
       // Initial load - no debounce needed
       Future.microtask(() => _performPreviewUpdate());
@@ -300,10 +302,19 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
         _borderRadius = (m['borderRadius'] as num?)?.toDouble() ?? 12.0;
         _logoMime = m['logoMime'] as String?;
         _bgMime = m['bgMime'] as String?;
+        _logoFilename = m['logoFilename'] as String?;
+        _bgFilename = m['bgFilename'] as String?;
         final logoB64 = m['logoB64'] as String?;
         final bgB64 = m['bgB64'] as String?;
         _logoBytes = (logoB64 == null || logoB64.isEmpty) ? null : base64Decode(logoB64);
         _bgBytes = (bgB64 == null || bgB64.isEmpty) ? null : base64Decode(bgB64);
+        // If we have bytes but no filename, set default filenames based on MIME type
+        if (_logoBytes != null && _logoFilename == null) {
+          _logoFilename = 'logo.png';
+        }
+        if (_bgBytes != null && _bgFilename == null) {
+          _bgFilename = 'background.jpg';
+        }
       });
       // Initial load - no debounce needed
       Future.microtask(() => _performPreviewUpdate());
@@ -327,6 +338,8 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
       'borderRadius': _borderRadius,
       'logoMime': _logoMime,
       'bgMime': _bgMime,
+      'logoFilename': _logoFilename,
+      'bgFilename': _bgFilename,
       'logoB64': _logoBytes == null ? null : base64Encode(_logoBytes!),
       'bgB64': _bgBytes == null ? null : base64Encode(_bgBytes!),
     };
@@ -360,8 +373,10 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
       primaryHex: _primaryCtrl.text.trim().isEmpty ? template.defaultPrimaryHex : _primaryCtrl.text.trim(),
       supportText: _supportCtrl.text.trim().isEmpty ? 'Need help? Contact the attendant.' : _supportCtrl.text.trim(),
       themeId: _themeId,
-      logoDataUri: _dataUri(_logoBytes, _logoMime),
-      backgroundDataUri: _dataUri(_bgBytes, _bgMime),
+      logoBytes: _logoBytes,
+      logoFilename: _logoFilename,
+      backgroundBytes: _bgBytes,
+      backgroundFilename: _bgFilename,
       cardOpacity: _cardOpacity,
       borderWidth: _borderWidth,
       borderStyle: _borderStyle,
@@ -376,7 +391,15 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
     final c = RouterOsApiClient(host: session.host, port: 8728, timeout: const Duration(seconds: 30));
     try {
       await c.login(username: session.username, password: session.password);
-      await HotspotPortalService.applyPortal(c, branding: branding);
+      // Use FTP credentials from router connection (same host/username/password)
+      await HotspotPortalService.applyPortal(
+        c,
+        branding: branding,
+        ftpHost: session.host,
+        ftpUsername: session.username,
+        ftpPassword: session.password,
+        ftpPort: 21,
+      );
       await _saveLocal();
       if (mounted) {
         setState(() => _status = 'Portal applied to router.');
@@ -728,7 +751,10 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
                                           onPressed: _loading
                                               ? null
                                               : () {
-                                                  setState(() => _logoBytes = null);
+                                                  setState(() {
+                                                    _logoBytes = null;
+                                                    _logoFilename = null;
+                                                  });
                                                   _updatePreview();
                                                 },
                                           icon: const Icon(Icons.delete_outline, size: 24),
@@ -784,7 +810,10 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
                                           onPressed: _loading
                                               ? null
                                               : () {
-                                                  setState(() => _bgBytes = null);
+                                                  setState(() {
+                                                    _bgBytes = null;
+                                                    _bgFilename = null;
+                                                  });
                                                   _updatePreview();
                                                 },
                                           icon: const Icon(Icons.delete_outline, size: 24),

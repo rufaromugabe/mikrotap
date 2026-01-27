@@ -480,7 +480,13 @@ class _RouterInitializationScreenState extends ConsumerState<RouterInitializatio
 
       // Install a default hotspot portal template (customizable in-app).
       _logLine('Installing portal template…');
-      await HotspotPortalService.applyDefaultPortal(c, routerName: _identity?['name'] ?? 'MikroTap Wi‑Fi');
+      await HotspotPortalService.applyDefaultPortal(
+        c,
+        routerName: _identity?['name'] ?? 'MikroTap Wi‑Fi',
+        ftpHost: widget.args.host,
+        ftpUsername: widget.args.username,
+        ftpPassword: widget.args.password,
+      );
       _logLine('Portal template installed.');
 
       // Always install cleanup silently (keeps router tidy).
