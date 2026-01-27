@@ -7,13 +7,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/utils/image_optimizer.dart';
 import '../../../data/services/routeros_api_client.dart';
 import '../../providers/active_router_provider.dart';
 import '../../services/hotspot_portal_service.dart';
-import '../../widgets/color_picker_palette.dart';
 import '../../widgets/color_combination_picker.dart';
+import 'portal_template_grid_screen.dart';
 
 class PortalTemplateEditorScreen extends ConsumerStatefulWidget {
   const PortalTemplateEditorScreen({
@@ -21,6 +22,8 @@ class PortalTemplateEditorScreen extends ConsumerStatefulWidget {
     required this.templateId,
     required this.routerName,
   });
+
+  static const routePath = '/workspace/portal/edit';
 
   final String templateId;
   final String routerName;
@@ -89,21 +92,6 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
     return 'data:$m;base64,${base64Encode(bytes)}';
   }
 
-  Color _parseColor(String hex) {
-    try {
-      final hexColor = hex.replaceAll('#', '');
-      if (hexColor.length == 6) {
-        return Color(int.parse('FF$hexColor', radix: 16));
-      }
-    } catch (_) {
-      // Invalid color, return default
-    }
-    return const Color(0xFF2563EB); // Default blue
-  }
-
-  String _colorToHex(Color color) {
-    return '#${color.value.toRadixString(16).substring(2).toUpperCase()}';
-  }
 
   Future<void> _pickImage({required bool forLogo}) async {
     try {
@@ -230,12 +218,18 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
     }
     try {
       final m = jsonDecode(raw) as Map<String, dynamic>;
-      final template = HotspotPortalService.getTemplateById(m['themeId'] as String? ?? _themeId);
+      // Always use the template being edited (widget.templateId), not the saved one
+      // This ensures we're editing the correct template
+      final template = HotspotPortalService.getTemplateById(_themeId);
       setState(() {
         _titleCtrl.text = (m['title'] as String?) ?? widget.routerName;
-        _primaryCtrl.text = (m['primaryHex'] as String?) ?? template.defaultPrimaryHex;
+        // Load saved primaryHex if it exists, otherwise use template default
+        _primaryCtrl.text = (m['primaryHex'] as String?)?.trim().isNotEmpty == true 
+            ? (m['primaryHex'] as String).trim()
+            : template.defaultPrimaryHex;
         _supportCtrl.text = (m['supportText'] as String?) ?? 'Need help? Contact the attendant.';
-        _themeId = (m['themeId'] as String?) ?? _themeId;
+        // Keep the template being edited - don't change _themeId
+        // _themeId stays as widget.templateId
         _cardOpacity = (m['cardOpacity'] as num?)?.toDouble() ?? 0.92;
         _borderWidth = (m['borderWidth'] as num?)?.toDouble() ?? 1.0;
         _borderStyle = (m['borderStyle'] as String?) ?? 'solid';
@@ -348,13 +342,9 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
     final template = HotspotPortalService.getTemplateById(_themeId);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Edit: ${template.name}'),
-      ),
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final isWide = constraints.maxWidth >= 900;
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= 900;
             
             if (isWide) {
               // Desktop: Row layout
@@ -370,8 +360,6 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Preview', style: Theme.of(context).textTheme.titleMedium),
-                            const SizedBox(height: 10),
                             Expanded(
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(16),
@@ -415,8 +403,6 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Preview', style: Theme.of(context).textTheme.titleMedium),
-                            const SizedBox(height: 10),
                             Expanded(
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(16),
@@ -449,7 +435,6 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
             }
           },
         ),
-      ),
     );
   }
 
@@ -484,17 +469,6 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
                     onCombinationSelected: (combo) {
                       setState(() {
                         _primaryCtrl.text = combo.primaryHex;
-                      });
-                      _updatePreview();
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  // Individual color picker (fallback)
-                  ColorPickerPalette(
-                    selectedColor: _parseColor(_primaryCtrl.text),
-                    onColorSelected: (color) {
-                      setState(() {
-                        _primaryCtrl.text = _colorToHex(color);
                       });
                       _updatePreview();
                     },
@@ -670,6 +644,15 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
                       ),
                     ),
                   ],
+                  const SizedBox(height: 16),
+                  OutlinedButton.icon(
+                    onPressed: () => context.go(PortalTemplateGridScreen.routePath),
+                    icon: const Icon(Icons.close),
+                    label: const Text('Close & Back to Grid'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 48),
+                    ),
+                  ),
                 ],
     );
   }

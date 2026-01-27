@@ -363,6 +363,12 @@ class HotspotPortalService {
           )
         : '';
 
+    // Add zoom wrapper for preview mode to fit in WebView (only affects preview, not router)
+    final previewWrapperStart = previewMode 
+        ? '<div style="transform: scale(0.5); transform-origin: center center; width: 200%; height: 200%; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.5);">'
+        : '';
+    final previewWrapperEnd = previewMode ? '</div>' : '';
+    
     return '''
 <!doctype html>
 <html lang="en">
@@ -373,7 +379,8 @@ class HotspotPortalService {
     $cssLink
     ${previewMode ? '<style>$cssContent</style>' : ''}
 </head>
-<body style="$bgStyle; margin:0; padding:0; width:100%; min-height:100vh; overflow-x:hidden;">
+<body style="$bgStyle; margin:0; padding:0; width:100%; min-height:100vh; overflow-x:hidden;${previewMode ? ' position: relative;' : ''}">
+    $previewWrapperStart
     $ifChapStart
     <form name="sendin" action="$formAction" method="post" style="display:none">
         <input type="hidden" name="username" />
@@ -394,7 +401,7 @@ class HotspotPortalService {
     </script>
     $ifChapEnd
 
-    <div class="main">
+    <div class="main"${previewMode ? ' style="padding-top: 300px;"' : ''}>
         <div class="wrap animated fadeIn">
             ${showLogo ? '<div style="text-align: center; margin-bottom:15px;"><img src="$logoSrc" style="border-radius:10px; width:80px; height:80px; object-fit: cover; border: 2px solid rgba(255,255,255,0.2);" alt="logo"/></div>' : ''}
             
@@ -448,6 +455,7 @@ class HotspotPortalService {
             </div>
         </div>
     </div>
+    $previewWrapperEnd
 </body>
 </html>
 ''';

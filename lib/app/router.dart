@@ -17,6 +17,7 @@ import '../presentation/screens/routers/manual_router_add_screen.dart';
 import '../presentation/screens/routers/router_home_screen.dart';
 import '../presentation/screens/routers/hotspot_user_profiles_screen.dart';
 import '../presentation/screens/routers/portal_template_grid_screen.dart';
+import '../presentation/screens/routers/portal_template_editor_screen.dart';
 import '../presentation/screens/vouchers/generate_vouchers_screen.dart';
 import '../presentation/screens/vouchers/print_vouchers_screen.dart';
 import '../presentation/screens/vouchers/vouchers_screen.dart';
@@ -104,6 +105,22 @@ final routerProvider = Provider<GoRouter>((ref) {
             );
           }
           return RouterDeviceDetailScreen(message: extra);
+        },
+      ),
+      // Portal template editor (outside shell to hide bottom nav)
+      GoRoute(
+        path: PortalTemplateEditorScreen.routePath,
+        builder: (context, state) {
+          final extra = state.extra;
+          if (extra is! Map<String, String>) {
+            return const Scaffold(
+              body: SafeArea(child: Center(child: Text('Missing template data.'))),
+            );
+          }
+          return PortalTemplateEditorScreen(
+            templateId: extra['templateId']!,
+            routerName: extra['routerName']!,
+          );
         },
       ),
 

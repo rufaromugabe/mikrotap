@@ -36,7 +36,7 @@ class ColorCombination {
 }
 
 /// Widget for selecting color combinations with creative presets
-class ColorCombinationPicker extends StatefulWidget {
+class ColorCombinationPicker extends StatelessWidget {
   const ColorCombinationPicker({
     super.key,
     required this.selectedPrimaryHex,
@@ -45,13 +45,6 @@ class ColorCombinationPicker extends StatefulWidget {
 
   final String selectedPrimaryHex;
   final ValueChanged<ColorCombination> onCombinationSelected;
-
-  @override
-  State<ColorCombinationPicker> createState() => _ColorCombinationPickerState();
-}
-
-class _ColorCombinationPickerState extends State<ColorCombinationPicker> {
-  bool _isDropdownOpen = false;
 
   static const List<ColorCombination> _combinations = [
     // Ocean & Sky
@@ -260,10 +253,10 @@ class _ColorCombinationPickerState extends State<ColorCombinationPicker> {
   }
 
   ColorCombination? _findCurrentCombination() {
-    final currentColor = _parseColor(widget.selectedPrimaryHex);
-    return ColorCombinationPicker._combinations.firstWhere(
+    final currentColor = _parseColor(selectedPrimaryHex);
+    return _combinations.firstWhere(
       (c) => c.primaryColor.value == currentColor.value,
-      orElse: () => ColorCombinationPicker._combinations.first,
+      orElse: () => _combinations.first,
     );
   }
 
@@ -293,6 +286,43 @@ class _ColorCombinationPickerState extends State<ColorCombinationPicker> {
             prefixIcon: Icon(Icons.palette_outlined),
           ),
           isExpanded: true,
+          selectedItemBuilder: (context) {
+            // Simple display when closed - must match items structure
+            final result = <Widget>[];
+            for (final entry in grouped.entries) {
+              // Add placeholder for category header (won't be shown)
+              result.add(const SizedBox.shrink());
+              // Add items for each combination in category
+              for (final combo in entry.value) {
+                result.add(
+                  Row(
+                    children: [
+                      Container(
+                        width: 20,
+                        height: 20,
+                        decoration: BoxDecoration(
+                          color: combo.primaryColor,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.outline,
+                            width: 1,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          combo.name,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+            }
+            return result;
+          },
           items: grouped.entries.map((entry) {
             return [
               // Category header
@@ -315,31 +345,18 @@ class _ColorCombinationPickerState extends State<ColorCombinationPicker> {
                 return DropdownMenuItem<ColorCombination>(
                   value: combo,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Row(
                       children: [
-                        // Color swatches
+                        // Color swatches (only shown when dropdown is open)
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Container(
-                              width: 24,
-                              height: 24,
-                              decoration: BoxDecoration(
-                                color: combo.primaryColor,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Theme.of(context).colorScheme.outline,
-                                  width: 1.5,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Container(
                               width: 20,
                               height: 20,
                               decoration: BoxDecoration(
-                                color: combo.secondaryColor,
+                                color: combo.primaryColor,
                                 shape: BoxShape.circle,
                                 border: Border.all(
                                   color: Theme.of(context).colorScheme.outline,
@@ -352,6 +369,19 @@ class _ColorCombinationPickerState extends State<ColorCombinationPicker> {
                               width: 16,
                               height: 16,
                               decoration: BoxDecoration(
+                                color: combo.secondaryColor,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Theme.of(context).colorScheme.outline,
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Container(
+                              width: 14,
+                              height: 14,
+                              decoration: BoxDecoration(
                                 color: combo.textColor,
                                 shape: BoxShape.circle,
                                 border: Border.all(
@@ -362,34 +392,24 @@ class _ColorCombinationPickerState extends State<ColorCombinationPicker> {
                             ),
                           ],
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 10),
                         Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                combo.name,
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                    ),
-                              ),
-                              Text(
-                                combo.description,
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      fontSize: 11,
-                                    ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
+                          child: Text(
+                            combo.name,
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         if (isSelected)
-                          Icon(
-                            Icons.check_circle,
-                            size: 20,
-                            color: Theme.of(context).colorScheme.primary,
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: Icon(
+                              Icons.check_circle,
+                              size: 18,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
                           ),
                       ],
                     ),
@@ -524,4 +544,10 @@ class _ColorCombinationPickerState extends State<ColorCombinationPicker> {
                   ),
                 ),
               ],
-            ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}

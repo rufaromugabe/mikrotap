@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -148,13 +149,12 @@ class _PortalTemplateGridScreenState extends ConsumerState<PortalTemplateGridScr
                     isActive: isActive,
                     routerName: session.routerName,
                     onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => PortalTemplateEditorScreen(
-                            templateId: template.id,
-                            routerName: session.routerName,
-                          ),
-                        ),
+                      context.push(
+                        PortalTemplateEditorScreen.routePath,
+                        extra: {
+                          'templateId': template.id,
+                          'routerName': session.routerName,
+                        },
                       ).then((_) => _loadCurrentTheme());
                     },
                   );
