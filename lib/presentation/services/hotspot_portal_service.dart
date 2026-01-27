@@ -329,206 +329,119 @@ class HotspotPortalService {
     final preset = presetById(b.themeId);
     
     // 1. Handle Colors and Backgrounds
+    // ALWAYS use data URIs (Base64) for images - inlined directly in HTML
+    // This avoids binary file upload issues and API limitations
     String bgStyle;
     if (b.backgroundDataUri != null && b.backgroundDataUri!.trim().isNotEmpty) {
-      bgStyle = 'background: linear-gradient(rgba(0, 22, 43, 1.0), rgba(0, 22, 43, 1.0)) !important;';
+      // Use data URI directly (works in both preview and router mode)
+      // Fixed background that covers entire screen and doesn't repeat
+      bgStyle = 'background: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url(${b.backgroundDataUri}) center center / cover no-repeat fixed !important; min-height: 100vh;';
     } else {
-      bgStyle = 'background: ${preset.bgCss} !important;';
+      // Fallback to theme background
+      bgStyle = 'background: ${preset.bgCss} !important; min-height: 100vh;';
     }
 
-    // 2. Handle Logo - Always use data URI (inlined in HTML for both preview and router)
-    // This avoids file upload issues and keeps everything in one HTML file
+    // 2. Handle Logo Data - ALWAYS use data URI (inlined in HTML)
     final logoSrc = b.logoDataUri ?? '';
     final showLogo = b.logoDataUri != null && b.logoDataUri!.isNotEmpty;
 
-    // 3. RouterOS Variables
+    // 3. Mock Variables for Preview
     final formAction = previewMode ? '#' : r'$(link-login-only)';
-    final usernameVal = previewMode ? '' : r'value="$(username)"';
-    final dstValue = previewMode ? '' : r'$(link-orig)';
-    final linkOrigEsc = previewMode ? '' : r'$(link-orig-esc)';
-    final macEsc = previewMode ? 'T-ABC123' : r'$(mac-esc)';
+    final usernameVal = previewMode ? '' : r'value="$(username)" ';
     
+    // Logic Stripping - RouterOS variables (no backslashes, RouterOS processes these)
     final ifChapStart = previewMode ? '' : r'$(if chap-id)';
     final ifChapEnd = previewMode ? '' : r'$(endif)';
-    final ifTrial = previewMode ? '' : '\$(if trial == "yes")';
-    final ifTrialEnd = previewMode ? '' : r'$(endif)';
-    
-    final errorInfo = previewMode 
-        ? '<p class="info">Please log in to use the internet hotspot service</p>'
-        : r'<p class="info $(if error)alert$(endif)">$(if error == "")Please log in to use the internet hotspot service$(endif)$(if error)$(error)$(endif)</p>';
+    final errorBlock = previewMode 
+        ? '<p class="info">Welcome to $title</p>' 
+        : r'$(if error)<p class="info alert">$(error)</p>$(endif)';
 
-    // 4. MD5 script - external for router, inline for preview
-    final md5Script = previewMode 
-        ? '<script>${_md5Js()}</script>'
-        : '<script src="/md5.js"></script>';
+    // CSS: inline in preview, external link for router
+    final cssLink = previewMode ? '' : '<link rel="stylesheet" href="css/style.css">';
+    final cssContent = previewMode ? _exactStyleCss(b, previewMode) : '';
 
     return '''
 <!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>$title</title>
+    $cssLink
+    ${previewMode ? '<style>$cssContent</style>' : ''}
 </head>
-<body style="$bgStyle">
+<body style="$bgStyle; margin:0; padding:0; width:100%; min-height:100vh; overflow-x:hidden;">
     $ifChapStart
     <form name="sendin" action="$formAction" method="post" style="display:none">
-        <input type="hidden" name="username">
-        <input type="hidden" name="password">
-        <input type="hidden" name="dst" value="$dstValue">
-        <input type="hidden" name="popup" value="true">
+        <input type="hidden" name="username" />
+        <input type="hidden" name="password" />
+        <input type="hidden" name="dst" value="" />
+        <input type="hidden" name="popup" value="true" />
     </form>
-
-    $md5Script
+    <script>${previewMode ? _md5Js() : '/* md5.js load */'}</script>
     <script>
         function doLogin() {
             document.sendin.username.value = document.login.username.value;
-            document.sendin.password.value = hexMD5('${previewMode ? "abc" : r"$(chap-id)"}' + document.login.password.value + '${previewMode ? "123" : r"$(chap-challenge)"}');
+            var chal = '${previewMode ? "123" : r"$(chap-challenge)"}';
+            var cid = '${previewMode ? "abc" : r"$(chap-id)"}';
+            document.sendin.password.value = hexMD5(cid + document.login.password.value + chal);
             document.sendin.submit();
             return false;
         }
     </script>
     $ifChapEnd
-    <div class="ie-fixMinHeight">
-        <div class="main">
-            <div class="wrap animated fadeIn">
-                ${showLogo ? '<div style="text-align: center; margin:10px;"><img src="$logoSrc" style="border-radius:10px; width:90px; height:90px; transform: rotate(0.0deg); max-width: 100%; height: auto; box-sizing: border-box;" alt="image"></div>' : ''}
 
-                <style>
-                    .form-container { text-align: center; background-color:rgba(255, 255, 255, 0.8); border-radius:10px; padding:10px; margin:10px;  box-sizing: border-box;}
-                    .tabs { display: flex; justify-content: center; margin-bottom: 20px; list-style: none; padding: 0; }
-                    .tab { flex: 1; text-align: center; padding: 10px; cursor: pointer; border-bottom: 1px solid rgba(7, 7, 10, 1.0); }
-                    .tab.active { border-bottom: 3px solid rgba(7, 7, 10, 1.0); }
-                    .tab a { text-decoration: none; color: rgba(7, 7, 10, 1.0); font-weight: bold; font-size: 20px; }
-                    .hidden { display: none; }
-                    .icoPin { height: 24px; position: absolute; top: 0; left: 0; margin-top: 10px; margin-left: 10px; fill: rgba(7, 7, 10, 1.0); }
-                    .button-submit {
-                        background: rgba(7, 7, 10, 1.0) !important;
-                        color: rgba(255, 255, 255, 1.0) !important;
-                        border: 0 !important;
-                        cursor: pointer !important;
-                        text-align: center !important;
-                        width: 100% !important;
-                        height: 44px !important;
-                        border-radius: 10px !important;
-                    }
-                     .info {
-                        color: rgba(7, 7, 10, 1.0);
-                        text-align: center;
-                        margin-bottom: 15px
-                    }
-                    .input-text {
-                        width: 100% !important;
-                        border: 1px solid rgba(7, 7, 10, 1.0) !important;
-                        height: 44px !important;
-                        padding: 3px 20px 3px 40px !important;
-                        margin-bottom: 10px !important;
-                        border-radius: 10px !important;
-                        background-color: rgba(255, 255, 255, 1.0) !important;
-                        color: rgba(7, 7, 10, 1.0);
-                    }
-                    input::placeholder {
-                        color: rgba(7, 7, 10, 1.0);
-                    }
-                    .ico {
-                        height: 16px;
-                        position: absolute;
-                        top: 0;
-                        left: 0;
-                        margin-top: 13px;
-                        margin-left: 14px;
-                        fill: rgba(7, 7, 10, 1.0) !important; 
-                    }
-                </style>
-                
-                <div class="form-container">
-                    <ul class="tabs">
-                        <li class="tab active" data-tab="pin"><a href="#login">🔑</a></li>
-                        <li class="tab" data-tab="user"><a href="#signup">👤</a></li>
-                    </ul>
-                
-                    <form name="login" action="$formAction" method="post"${previewMode ? ' onsubmit="return doLogin()"' : r' $(if chap-id)onSubmit="return doLogin()"$(endif)'}>
-                        <input type="hidden" name="dst" value="$dstValue">
-                        <input type="hidden" name="popup" value="true">
-                
-                        $errorInfo
-                
-                        <label>
-                            <svg id="userForm" class="ico hidden" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><path d="M224 256c70.7 0 128-57.3 128-128S294.7 0 224 0 96 57.3 96 128s57.3 128 128 128zm89.6 32h-16.7c-22.2 10.2-46.9 16-72.9 16s-50.6-5.8-72.9-16h-16.7C60.2 288 0 348.2 0 422.4V464c0 26.5 21.5 48 48 48h352c26.5 0 48-21.5 48-48v-41.6c0-74.2-60.2-134.4-134.4-134.4z"></path></svg>
-                            <svg xmlns="http://www.w3.org/2000/svg" id="pinForm" class="icoPin" height="24px" viewBox="0 -960 960 960" width="24px"><path d="M120-160v-112q0-34 17.5-62.5T184-378q62-31 126-46.5T440-440q20 0 40 1.5t40 4.5q-4 58 21 109.5t73 84.5v80H120ZM760-40l-60-60v-186q-44-13-72-49.5T600-420q0-58 41-99t99-41q58 0 99 41t41 99q0 45-25.5 80T790-290l50 50-60 60 60 60-80 80ZM440-480q-66 0-113-47t-47-113q0-66 47-113t113-47q66 0 113 47t47 113q0 66-47 113t-113 47Zm300 80q17 0 28.5-11.5T780-440q0-17-11.5-28.5T740-480q-17 0-28.5 11.5T700-440q0 17 11.5 28.5T740-400Z"></path></svg>
-                            <input name="username" class="input-text" type="text" $usernameVal placeholder="">
-                        </label>
-                
-                        <label id="userInput" class="hidden">
-                            <svg class="ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path d="M512 176.001C512 273.203 433.202 352 336 352c-11.22 0-22.19-1.062-32.827-3.069l-24.012 27.014A23.999 23.999 0 0 1 261.223 384H224v40c0 13.255-10.745 24-24 24h-40v40c0 13.255-10.745 24-24 24H24c-13.255 0-24-10.745-24-24v-78.059c0-6.365 2.529-12.47 7.029-16.971l161.802-161.802C163.108 213.814 160 195.271 160 176 160 78.798 238.797.001 335.999 0 433.488-.001 512 78.511 512 176.001zM336 128c0 26.51 21.49 48 48 48s48-21.49 48-48-21.49-48-48-48-48 21.49-48 48z"></path></svg>
-                            <input name="password" class="input-text" type="password" placeholder="">
-                        </label>
-                
-                        <label id="pinInput"></label>
-                        <input type="submit" value="Connect" class="button-submit">
-                    </form>
-                
-                    <script>
-                        const tabs = document.querySelectorAll('.tab');
-                        tabs.forEach(tab => {
-                            tab.addEventListener('click', () => {
-                                tabs.forEach(t => t.classList.remove('active'));
-                                tabs.forEach(t => {
-                                    const formEl = document.querySelector('#\'' + t.dataset.tab + 'Form\'');
-                                    const inputEl = document.querySelector('#\'' + t.dataset.tab + 'Input\'');
-                                    if (formEl) formEl.classList.add('hidden');
-                                    if (inputEl) inputEl.classList.add('hidden');
-                                });
-                                
-                                tab.classList.add('active');
-                                const activeForm = document.querySelector('#\'' + tab.dataset.tab + 'Form\'');
-                                const activeInput = document.querySelector('#\'' + tab.dataset.tab + 'Input\'');
-                                if (activeForm) activeForm.classList.remove('hidden');
-                                if (activeInput) activeInput.classList.remove('hidden');
-                            });
-                        });
-                    </script>
+    <div class="main">
+        <div class="wrap animated fadeIn">
+            ${showLogo ? '<div style="text-align: center; margin-bottom:15px;"><img src="$logoSrc" style="border-radius:10px; width:80px; height:80px; object-fit: cover; border: 2px solid rgba(255,255,255,0.2);" alt="logo"/></div>' : ''}
+            
+            <div class="form-container">
+                <ul class="tabs">
+                    <li class="tab active" id="tPin" onclick="switchTab('pin')">🔑 PIN</li>
+                    <li class="tab" id="tUser" onclick="switchTab('user')">👤 User</li>
+                </ul>
+            
+                <form name="login" action="$formAction" method="post"${previewMode ? ' onsubmit="return doLogin()"' : r'$(if chap-id)onSubmit="return doLogin()"$(endif)'} id="loginForm">
+                    $errorBlock
+                    <label>
+                        <input name="username" id="mainInput" class="input-text" type="text" $usernameVal placeholder="PIN Code" autocomplete="off" />
+                    </label>
+            
+                    <label id="passWrapper" style="display: none;">
+                        <input name="password" id="passInput" class="input-text" type="password" placeholder="Password" />
+                    </label>
+            
+                    <input type="submit" value="Connect" class="button-submit"/>
+                </form>
+            </div>
+
+            ${b.supportText.isNotEmpty ? '''
+            <div class="info-section">
+                <div class="info-content">
+                    ${_escapeHtml(b.supportText).replaceAll('\n', '<br>')}
                 </div>
-                
-${b.supportText.isNotEmpty ? '''
-<div style="
-    background-color:rgba(255, 255, 255, 0.8);
-    border-radius:10px;
-    padding:10px;
-    margin:10px;
-    text-align: center;
-    box-sizing: border-box;">
-    <p style="color:rgba(7, 7, 10, 1.0)">${_escapeHtml(b.supportText).replaceAll('\n', '<br>')}</p>
-</div>
-''' : ''}
-$ifTrial
-     <div style="
-        background-color:rgba(255, 255, 255, 0.8);
-        border-radius:10px;
-        padding:10px;
-        margin:10px;
-        text-align: center;
-        box-sizing: border-box;">
-        <p style="color:rgba(7, 7, 10, 1.0)">Free internet trial</p>
-        <a href="$formAction?dst=$linkOrigEsc&amp;username=$macEsc" style="
-           display:inline-block;
-           height: 44px;
-           text-align: center;
-           padding:12px;
-           margin-top:8px;
-           border-radius:10px;
-           width: 100%;
-           background-color:rgba(7, 7, 10, 1.0);
-           color:rgba(255, 255, 255, 1.0);
-           text-decoration:none;">Click here</a>
-     </div>
-$ifTrialEnd
-<div style="
-    padding:10px;
-    text-align: center;
-    box-sizing: border-box;">
-    <p style="color: black; text-shadow: 1px 1px 2px white; margin: 0;">Powered by MikroTap</p>
-</div>
+            </div>
+            ''' : ''}
+
+            <script>
+                var mode = 'pin';
+                function switchTab(t) {
+                    mode = t;
+                    document.getElementById('tPin').className = (t === 'pin') ? 'tab active' : 'tab';
+                    document.getElementById('tUser').className = (t === 'user') ? 'tab active' : 'tab';
+                    document.getElementById('passWrapper').style.display = (t === 'pin') ? 'none' : 'block';
+                    document.getElementById('mainInput').placeholder = (t === 'pin') ? 'PIN Code' : 'Username';
+                }
+                document.getElementById('loginForm').onsubmit = function() {
+                    if(mode === 'pin') {
+                        document.getElementById('passInput').value = document.getElementById('mainInput').value;
+                    }
+                    return true;
+                };
+            </script>
+
+            <div style="padding:10px; text-align: center;">
+                <p style="color: white; font-size: 11px; text-shadow: 1px 1px 2px rgba(0,0,0,0.8); margin:0;">Powered by MikroTap</p>
             </div>
         </div>
     </div>
@@ -545,9 +458,20 @@ $ifTrialEnd
 * { box-sizing: border-box; }
 body,html{min-height:100vh; margin:0; padding:0; font-family:sans-serif; width:100%; overflow-x:hidden;}
 body{ background: linear-gradient(135deg, #2c3e50, #000000); background-size: cover; background-position: center; background-attachment: fixed; display:flex; justify-content:center; align-items:center; width:100%;}
-.ie-fixMinHeight { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
 .main { width: 100%; max-width: 100%; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
 .wrap{ width: 100%; max-width: 410px; padding: 20px; margin: 0 auto; }
+.form-container { text-align: center; background-color:rgba(255, 255, 255, 0.8); border-radius:10px; padding:20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); margin-bottom: 15px; width:100%; }
+.tabs { display: flex; justify-content: center; margin-bottom: 20px; list-style: none; padding: 0; border-bottom: 1px solid rgba(7, 7, 10, 0.2); width:100%; }
+.tab { flex: 1; text-align: center; padding: 10px; cursor: pointer; border-bottom: 1px solid #ccc; font-size: 20px; }
+.tab.active { border-bottom: 3px solid #07070a; }
+.hidden { display: none; }
+.input-text { width: 100%; border: 1px solid #07070a; height: 44px; padding: 10px; margin-bottom: 10px; border-radius: 10px; box-sizing: border-box; }
+.button-submit { background: #07070a; color: #fff; border: 0; width: 100%; height: 44px; border-radius: 10px; cursor: pointer; font-weight: bold; }
+.info { color: #07070a; margin-bottom: 15px; font-size: 14px; }
+.info.alert { color: #da3d41; font-weight: bold; }
+.info-section { margin-top: 15px; text-align: center; width:100%; }
+.info-content { background-color: rgba(255, 255, 255, 0.9); border-radius: 10px; padding: 15px 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); color: #07070a; font-size: 13px; line-height: 1.6; width:100%; }
+label { display: block; width:100%; }
 .animated { animation: fadeIn 0.5s; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 ''';
