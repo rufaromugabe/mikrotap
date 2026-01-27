@@ -51,7 +51,6 @@ class RoundedTemplate implements PortalTemplate {
   }) {
     final width = borderWidth ?? 0.0;
     final style = borderStyle ?? 'solid';
-    final radius = borderRadius ?? 999.0; // Pill shape
     if (width == 0 || style == 'none') {
       return 'none';
     }
@@ -75,10 +74,10 @@ class RoundedTemplate implements PortalTemplate {
       borderStyle: borderStyle,
       borderRadius: borderRadius,
     );
-    final radius = borderRadius ?? 999.0;
+    final radius = borderRadius ?? 24.0;
 
     return '''
-* { box-sizing: border-box; }
+    * { box-sizing: border-box; }
 body,html{min-height:100vh; margin:0; padding:0; font-family:sans-serif; width:100%; overflow-x:hidden;}
 body{ background: $bg; background-size: cover; background-position: center; background-attachment: fixed; display:flex; justify-content:center; align-items:center; width:100%;}
 .main { width: 100%; max-width: 100%; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
@@ -119,10 +118,10 @@ label { display: block; width:100%; }
       borderStyle: borderStyle,
       borderRadius: borderRadius,
     );
-    final radius = borderRadius ?? 999.0;
+    final radius = borderRadius ?? 24.0;
 
     return '''
-body, html { margin: 0; padding: 0; font-family: sans-serif; height: 100%; width: 100%; overflow: hidden; }
+    body, html { margin: 0; padding: 0; font-family: sans-serif; height: 100%; width: 100%; overflow: hidden; }
 body { background: $bg; background-size: cover; background-position: center; }
 .main { height: 100vh; width: 100%; display: flex; justify-content: center; align-items: center; box-sizing: border-box; }
 .wrap { width: 90%; max-width: 380px; padding: 10px; }

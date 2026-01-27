@@ -237,7 +237,9 @@ class _TemplatePreviewCardState extends State<_TemplatePreviewCard> {
                 child: Container(
                   color: Colors.grey[200],
                   child: _previewReady
-                      ? WebViewWidget(controller: _previewController)
+                      ? IgnorePointer(
+                          child: WebViewWidget(controller: _previewController),
+                        )
                       : const Center(child: CircularProgressIndicator()),
                 ),
               ),
