@@ -364,8 +364,12 @@ class HotspotPortalService {
         : '';
 
     // Add zoom wrapper for preview mode to fit in WebView (only affects preview, not router)
+    // Editor preview uses larger scale (0.65) for better visibility, grid uses smaller (0.5)
+    final previewScale = previewMode ? (isGridPreview ? 0.5 : 0.70) : 1.0;
+    final previewWidth = previewMode ? (100 / previewScale).toStringAsFixed(2) : '100';
+    final previewHeight = previewMode ? (100 / previewScale).toStringAsFixed(2) : '100';
     final previewWrapperStart = previewMode 
-        ? '<div style="transform: scale(0.5); transform-origin: center center; width: 200%; height: 200%; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.5);">'
+        ? '<div style="transform: scale($previewScale); transform-origin: center center; width: ${previewWidth}%; height: ${previewHeight}%; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale($previewScale);">'
         : '';
     final previewWrapperEnd = previewMode ? '</div>' : '';
     
@@ -401,7 +405,7 @@ class HotspotPortalService {
     </script>
     $ifChapEnd
 
-    <div class="main"${previewMode ? (isGridPreview ? ' style="padding-top: 200px;"' : ' style="padding-top: 300px;"') : ''}>
+    <div class="main"${previewMode ? (isGridPreview ? ' style="padding-top: 200px;"' : ' style="padding-top: 200px;"') : ''}>
         <div class="wrap animated fadeIn">
             ${showLogo ? '<div style="text-align: center; margin-bottom:15px;"><img src="$logoSrc" style="border-radius:10px; width:80px; height:80px; object-fit: cover; border: 2px solid rgba(255,255,255,0.2);" alt="logo"/></div>' : ''}
             

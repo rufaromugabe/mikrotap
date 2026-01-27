@@ -390,7 +390,11 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
                                 : const Icon(Icons.cloud_upload),
                             label: const Text('Apply'),
                             style: FilledButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                              minimumSize: const Size(0, 44),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
                             ),
                           ),
                         ],
@@ -630,47 +634,54 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
                       // Logo column
                       Expanded(
                         child: Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(8),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    const Icon(Icons.image_outlined, size: 16),
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: Text('Logo', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12, fontWeight: FontWeight.w600)),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 6),
-                                OutlinedButton.icon(
-                                  onPressed: _loading ? null : () => _pickImage(forLogo: true),
-                                  icon: const Icon(Icons.add_photo_alternate, size: 16),
-                                  label: Text(_logoBytes == null ? 'Pick' : 'Change', style: const TextStyle(fontSize: 12)),
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                    minimumSize: const Size(0, 32),
+                          child: SizedBox(
+                            height: 150,
+                            child: Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  // Header
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.image_outlined, size: 20),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text('Logo', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 16, fontWeight: FontWeight.w600)),
+                                      ),
+                                      if (_logoBytes != null)
+                                        IconButton(
+                                          tooltip: 'Remove logo',
+                                          iconSize: 30,
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
+                                          visualDensity: VisualDensity.compact,
+                                          onPressed: _loading
+                                              ? null
+                                              : () {
+                                                  setState(() => _logoBytes = null);
+                                                  _updatePreview();
+                                                },
+                                          icon: const Icon(Icons.delete_outline, size: 24),
+                                        ),
+                                    ],
                                   ),
-                                ),
-                                if (_logoBytes != null) ...[
-                                  const SizedBox(height: 4),
-                                  IconButton(
-                                    tooltip: 'Remove logo',
-                                    iconSize: 18,
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                    onPressed: _loading
-                                        ? null
-                                        : () {
-                                            setState(() => _logoBytes = null);
-                                            _updatePreview();
-                                          },
-                                    icon: const Icon(Icons.delete_outline, size: 18),
+                                  const Spacer(),
+                                  // Action button
+                                  OutlinedButton.icon(
+                                    onPressed: _loading ? null : () => _pickImage(forLogo: true),
+                                    icon: const Icon(Icons.add_photo_alternate, size: 16),
+                                    label: Text(_logoBytes == null ? 'Pick Logo' : 'Change Logo', style: const TextStyle(fontSize: 12)),
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                                      minimumSize: const Size(0, 44),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                    ),
                                   ),
                                 ],
-                              ],
+                              ),
                             ),
                           ),
                         ),
@@ -679,47 +690,54 @@ class _PortalTemplateEditorScreenState extends ConsumerState<PortalTemplateEdito
                       // Background column
                       Expanded(
                         child: Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(8),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    const Icon(Icons.wallpaper_outlined, size: 16),
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: Text('Background', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12, fontWeight: FontWeight.w600)),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 6),
-                                OutlinedButton.icon(
-                                  onPressed: _loading ? null : () => _pickImage(forLogo: false),
-                                  icon: const Icon(Icons.add_photo_alternate, size: 16),
-                                  label: Text(_bgBytes == null ? 'Pick' : 'Change', style: const TextStyle(fontSize: 12)),
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                    minimumSize: const Size(0, 32),
+                          child: SizedBox(
+                            height: 150,
+                            child: Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  // Header
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.wallpaper_outlined, size: 20),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text('Background', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 16, fontWeight: FontWeight.w600)),
+                                      ),
+                                      if (_bgBytes != null)
+                                        IconButton(
+                                          tooltip: 'Remove background',
+                                          iconSize: 24,
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
+                                          visualDensity: VisualDensity.compact,
+                                          onPressed: _loading
+                                              ? null
+                                              : () {
+                                                  setState(() => _bgBytes = null);
+                                                  _updatePreview();
+                                                },
+                                          icon: const Icon(Icons.delete_outline, size: 24),
+                                        ),
+                                    ],
                                   ),
-                                ),
-                                if (_bgBytes != null) ...[
-                                  const SizedBox(height: 4),
-                                  IconButton(
-                                    tooltip: 'Remove background',
-                                    iconSize: 18,
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                    onPressed: _loading
-                                        ? null
-                                        : () {
-                                            setState(() => _bgBytes = null);
-                                            _updatePreview();
-                                          },
-                                    icon: const Icon(Icons.delete_outline, size: 18),
+                                  const Spacer(),
+                                  // Action button
+                                  OutlinedButton.icon(
+                                    onPressed: _loading ? null : () => _pickImage(forLogo: false),
+                                    icon: const Icon(Icons.add_photo_alternate, size: 16),
+                                    label: Text(_bgBytes == null ? 'Pick Background' : 'Change Background', style: const TextStyle(fontSize: 12)),
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                                      minimumSize: const Size(0, 44),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                    ),
                                   ),
                                 ],
-                              ],
+                              ),
                             ),
                           ),
                         ),
