@@ -44,7 +44,7 @@ class PortalBranding {
   final String themeId;
   final String? logoDataUri; // e.g. data:image/png;base64,...
   final String? backgroundDataUri; // e.g. data:image/jpeg;base64,...
-  
+
   // Template customization options
   final double? cardOpacity; // 0.0 to 1.0
   final double? borderWidth; // in pixels
@@ -78,10 +78,7 @@ class HotspotPortalService {
   /// Legacy method for backward compatibility
   @Deprecated('Use getTemplateById instead')
   static PortalThemePreset presetById(String? id) {
-    return presets.firstWhere(
-      (p) => p.id == id,
-      orElse: () => presets.first,
-    );
+    return presets.firstWhere((p) => p.id == id, orElse: () => presets.first);
   }
 
   static PortalBranding defaultBranding({required String routerName}) {
@@ -118,13 +115,14 @@ class HotspotPortalService {
 
     // 1. Ensure the directory exists by creating it explicitly
     // RouterOS requires directories to be created with type=directory
-    final dirExists = await c.findOne('/file/print', key: 'name', value: directoryName);
+    final dirExists = await c.findOne(
+      '/file/print',
+      key: 'name',
+      value: directoryName,
+    );
     if (dirExists == null) {
       try {
-        await c.add('/file/add', {
-          'name': directoryName,
-          'type': 'directory',
-        });
+        await c.add('/file/add', {'name': directoryName, 'type': 'directory'});
         // Small delay to ensure directory is created
         await Future.delayed(const Duration(milliseconds: 100));
       } catch (e) {
@@ -132,16 +130,17 @@ class HotspotPortalService {
         // RouterOS may auto-create directories when files are added
       }
     }
-    
+
     // Also ensure css subdirectory exists
     final cssDirName = '$directoryName/css';
-    final cssDirExists = await c.findOne('/file/print', key: 'name', value: cssDirName);
+    final cssDirExists = await c.findOne(
+      '/file/print',
+      key: 'name',
+      value: cssDirName,
+    );
     if (cssDirExists == null) {
       try {
-        await c.add('/file/add', {
-          'name': cssDirName,
-          'type': 'directory',
-        });
+        await c.add('/file/add', {'name': cssDirName, 'type': 'directory'});
         // Small delay to ensure directory is created
         await Future.delayed(const Duration(milliseconds: 100));
       } catch (e) {
@@ -152,13 +151,13 @@ class HotspotPortalService {
     // 2. Upload files using the Chunked Method (handles files >64KB)
     await _upsertFileChunked(c, '$directoryName/login.html', loginHtml);
     await Future.delayed(const Duration(milliseconds: 200));
-    
+
     await _upsertFileChunked(c, '$directoryName/logout.html', logoutHtml);
     await Future.delayed(const Duration(milliseconds: 200));
-    
+
     await _upsertFileChunked(c, '$directoryName/status.html', statusHtml);
     await Future.delayed(const Duration(milliseconds: 200));
-    
+
     await _upsertFileChunked(c, '$directoryName/md5.js', md5Js);
     await Future.delayed(const Duration(milliseconds: 200));
 
@@ -167,7 +166,11 @@ class HotspotPortalService {
     await Future.delayed(const Duration(milliseconds: 200));
 
     // 4. Point Hotspot Profile to this folder
-    final profileId = await c.findId('/ip/hotspot/profile/print', key: 'name', value: 'mikrotap');
+    final profileId = await c.findId(
+      '/ip/hotspot/profile/print',
+      key: 'name',
+      value: 'mikrotap',
+    );
     if (profileId != null) {
       await c.setById(
         '/ip/hotspot/profile/set',
@@ -183,12 +186,19 @@ class HotspotPortalService {
   /// Builds the same `login.html` content we upload to RouterOS, but with
   /// MikroTik variables replaced by placeholders so it can be rendered in-app
   /// (WebView preview).
-  static String buildLoginHtmlPreview({required PortalBranding branding, bool isGridPreview = false}) {
-    return _loginHtml(branding, previewMode: true, isGridPreview: isGridPreview);
+  static String buildLoginHtmlPreview({
+    required PortalBranding branding,
+    bool isGridPreview = false,
+  }) {
+    return _loginHtml(
+      branding,
+      previewMode: true,
+      isGridPreview: isGridPreview,
+    );
   }
 
   /// Chunked file upload to handle files larger than RouterOS API 64KB limit.
-  /// 
+  ///
   /// Splits content into <35KB chunks, stores them in temporary scripts,
   /// and concatenates them on the router side into the final file.
   /// This is the MikroTicket-style approach for handling large portal files.
@@ -198,7 +208,7 @@ class HotspotPortalService {
     String contents,
   ) async {
     const int chunkSize = 35000; // Safely under the 64KB API word limit
-    
+
     // If content fits in one chunk, use simple upload
     if (contents.length <= chunkSize) {
       await _upsertFileSimple(c, name: fileName, contents: contents);
@@ -208,14 +218,20 @@ class HotspotPortalService {
     // Split content into chunks
     final List<String> chunks = [];
     for (var i = 0; i < contents.length; i += chunkSize) {
-      final end = (i + chunkSize > contents.length) ? contents.length : i + chunkSize;
+      final end = (i + chunkSize > contents.length)
+          ? contents.length
+          : i + chunkSize;
       chunks.add(contents.substring(i, end));
     }
 
     // 1. Create or clear the target file first
     // RouterOS requires 'type=file' for file creation
     // Note: RouterOS accepts forward slashes in filenames for subdirectories
-    final existingFile = await c.findOne('/file/print', key: 'name', value: fileName);
+    final existingFile = await c.findOne(
+      '/file/print',
+      key: 'name',
+      value: fileName,
+    );
     if (existingFile == null) {
       try {
         await c.add('/file/add', {
@@ -232,15 +248,23 @@ class HotspotPortalService {
         );
       }
     } else {
-      await c.setById('/file/set', id: existingFile['.id']!, attrs: {'contents': ''});
+      await c.setById(
+        '/file/set',
+        id: existingFile['.id']!,
+        attrs: {'contents': ''},
+      );
     }
 
     // 2. Process each chunk using RouterOS scripts as temporary buffers
     for (int i = 0; i < chunks.length; i++) {
       final scriptName = 'mikrotap_chunk_$i';
-      
+
       // Clean up old script if it exists
-      final oldScriptId = await c.findId('/system/script/print', key: 'name', value: scriptName);
+      final oldScriptId = await c.findId(
+        '/system/script/print',
+        key: 'name',
+        value: scriptName,
+      );
       if (oldScriptId != null) {
         await c.removeById('/system/script/remove', id: oldScriptId);
       }
@@ -255,7 +279,11 @@ class HotspotPortalService {
       // Create a script that appends this chunk to the file
       // RouterOS script: read current file, append chunk, write back
       final appendScriptName = 'mikrotap_append_$i';
-      final appendScriptId = await c.findId('/system/script/print', key: 'name', value: appendScriptName);
+      final appendScriptId = await c.findId(
+        '/system/script/print',
+        key: 'name',
+        value: appendScriptName,
+      );
       if (appendScriptId != null) {
         await c.removeById('/system/script/remove', id: appendScriptId);
       }
@@ -263,10 +291,11 @@ class HotspotPortalService {
       // Escape quotes in fileName for RouterOS script
       final escapedFileName = fileName.replaceAll('"', '\\"');
       final escapedScriptName = scriptName.replaceAll('"', '\\"');
-      
+
       // RouterOS script to append chunk to file
       // Note: $ in RouterOS scripts needs escaping as \$ in Dart strings
-      final appendScriptSource = '''
+      final appendScriptSource =
+          '''
 :local current [/file get [find name="$escapedFileName"] contents];
 :local chunk [/system script get [find name="$escapedScriptName"] source];
 /file set [find name="$escapedFileName"] contents=(\$current . \$chunk);
@@ -279,20 +308,28 @@ class HotspotPortalService {
       });
 
       // Run the append script
-      final appendId = await c.findId('/system/script/print', key: 'name', value: appendScriptName);
+      final appendId = await c.findId(
+        '/system/script/print',
+        key: 'name',
+        value: appendScriptName,
+      );
       if (appendId != null) {
         await c.command(['/system/script/run', '=.id=$appendId']);
       }
 
       // Cleanup both scripts
-      final chunkScriptId = await c.findId('/system/script/print', key: 'name', value: scriptName);
+      final chunkScriptId = await c.findId(
+        '/system/script/print',
+        key: 'name',
+        value: scriptName,
+      );
       if (chunkScriptId != null) {
         await c.removeById('/system/script/remove', id: chunkScriptId);
       }
       if (appendId != null) {
         await c.removeById('/system/script/remove', id: appendId);
       }
-      
+
       // Small delay to let the Router CPU process
       await Future.delayed(const Duration(milliseconds: 150));
     }
@@ -319,13 +356,17 @@ class HotspotPortalService {
   }
 
   // EXACT REPRODUCTION OF THE TABBED LOGIN HTML (MikroTicket style)
-  static String _loginHtml(PortalBranding b, {bool previewMode = false, bool isGridPreview = false}) {
+  static String _loginHtml(
+    PortalBranding b, {
+    bool previewMode = false,
+    bool isGridPreview = false,
+  }) {
     final title = _escapeHtml(b.title);
     final template = getTemplateById(b.themeId);
-    final primaryHex = b.primaryHex.trim().isEmpty 
-        ? template.defaultPrimaryHex 
+    final primaryHex = b.primaryHex.trim().isEmpty
+        ? template.defaultPrimaryHex
         : b.primaryHex.trim();
-    
+
     // 1. Handle Colors and Backgrounds
     // ALWAYS use data URIs (Base64) for images - inlined directly in HTML
     // This avoids binary file upload issues and API limitations
@@ -334,7 +375,8 @@ class HotspotPortalService {
       backgroundDataUri: b.backgroundDataUri,
     );
     // Ensure background image doesn't repeat and covers properly on all screen sizes
-    final hasBackgroundImage = b.backgroundDataUri != null && b.backgroundDataUri!.isNotEmpty;
+    final hasBackgroundImage =
+        b.backgroundDataUri != null && b.backgroundDataUri!.isNotEmpty;
     // For background images, completely remove 'fixed' from shorthand to prevent repeating on wide screens
     String processedBgCss = bgCss;
     if (hasBackgroundImage) {
@@ -356,17 +398,19 @@ class HotspotPortalService {
     // 3. Mock Variables for Preview
     final formAction = previewMode ? '#' : r'$(link-login-only)';
     final usernameVal = previewMode ? '' : r'value="$(username)" ';
-    
+
     // Logic Stripping - RouterOS variables (no backslashes, RouterOS processes these)
     final ifChapStart = previewMode ? '' : r'$(if chap-id)';
     final ifChapEnd = previewMode ? '' : r'$(endif)';
-    final errorBlock = previewMode 
-        ? '<p class="info">Welcome to $title</p>' 
+    final errorBlock = previewMode
+        ? '<p class="info">Welcome to $title</p>'
         : r'$(if error)<p class="info alert">$(error)</p>$(endif)';
 
     // CSS: inline in preview, external link for router
-    final cssLink = previewMode ? '' : '<link rel="stylesheet" href="css/style.css">';
-    final cssContent = previewMode 
+    final cssLink = previewMode
+        ? ''
+        : '<link rel="stylesheet" href="css/style.css">';
+    final cssContent = previewMode
         ? template.generatePreviewCss(
             primaryHex: primaryHex,
             backgroundDataUri: b.backgroundDataUri,
@@ -380,13 +424,17 @@ class HotspotPortalService {
     // Add zoom wrapper for preview mode to fit in WebView (only affects preview, not router)
     // Editor preview uses larger scale (0.65) for better visibility, grid uses smaller (0.5)
     final previewScale = previewMode ? (isGridPreview ? 0.5 : 0.70) : 1.0;
-    final previewWidth = previewMode ? (100 / previewScale).toStringAsFixed(2) : '100';
-    final previewHeight = previewMode ? (100 / previewScale).toStringAsFixed(2) : '100';
-    final previewWrapperStart = previewMode 
+    final previewWidth = previewMode
+        ? (100 / previewScale).toStringAsFixed(2)
+        : '100';
+    final previewHeight = previewMode
+        ? (100 / previewScale).toStringAsFixed(2)
+        : '100';
+    final previewWrapperStart = previewMode
         ? '<div style="transform: scale($previewScale); transform-origin: center center; width: ${previewWidth}%; height: ${previewHeight}%; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale($previewScale);">'
         : '';
     final previewWrapperEnd = previewMode ? '</div>' : '';
-    
+
     return '''
 <!doctype html>
 <html lang="en" style="margin:0; padding:0; width:100%; max-width:100%; overflow-x:hidden; box-sizing:border-box;">
@@ -482,10 +530,10 @@ class HotspotPortalService {
   // EXACT REPRODUCTION OF THE style.css (MikroTicket style)
   static String _exactStyleCss(PortalBranding b, bool previewMode) {
     final template = getTemplateById(b.themeId);
-    final primaryHex = b.primaryHex.trim().isEmpty 
-        ? template.defaultPrimaryHex 
+    final primaryHex = b.primaryHex.trim().isEmpty
+        ? template.defaultPrimaryHex
         : b.primaryHex.trim();
-    
+
     // For router mode, return the template CSS
     if (!previewMode) {
       return template.generateRouterCss(
@@ -497,7 +545,7 @@ class HotspotPortalService {
         borderRadius: b.borderRadius,
       );
     }
-    
+
     // For preview mode, return optimized CSS with overflow control
     return template.generatePreviewCss(
       primaryHex: primaryHex,
@@ -512,8 +560,8 @@ class HotspotPortalService {
   static String _logoutHtml(PortalBranding b) {
     final title = _escapeHtml(b.title);
     final template = getTemplateById(b.themeId);
-    final primary = b.primaryHex.trim().isEmpty 
-        ? template.defaultPrimaryHex 
+    final primary = b.primaryHex.trim().isEmpty
+        ? template.defaultPrimaryHex
         : b.primaryHex.trim();
     final bg = template.generateBackgroundCss(
       primaryHex: primary,
@@ -525,7 +573,9 @@ class HotspotPortalService {
     );
     final text = template.generateTextCss();
     final muted = template.generateMutedCss();
-    final logo = (b.logoDataUri != null && b.logoDataUri!.trim().isNotEmpty) ? b.logoDataUri!.trim() : null;
+    final logo = (b.logoDataUri != null && b.logoDataUri!.trim().isNotEmpty)
+        ? b.logoDataUri!.trim()
+        : null;
     return '''
 <!doctype html>
 <html>
@@ -567,8 +617,8 @@ class HotspotPortalService {
   static String _statusHtml(PortalBranding b) {
     final title = _escapeHtml(b.title);
     final template = getTemplateById(b.themeId);
-    final primary = b.primaryHex.trim().isEmpty 
-        ? template.defaultPrimaryHex 
+    final primary = b.primaryHex.trim().isEmpty
+        ? template.defaultPrimaryHex
         : b.primaryHex.trim();
     final bg = template.generateBackgroundCss(
       primaryHex: primary,
