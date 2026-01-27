@@ -8,6 +8,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../../core/utils/image_optimizer.dart';
 import '../../../data/services/routeros_api_client.dart';
 import '../../providers/active_router_provider.dart';
 import '../../services/hotspot_portal_service.dart';
@@ -116,28 +117,46 @@ class _PortalBrandingScreenState extends ConsumerState<PortalBrandingScreen> {
         return;
       }
 
-      // Keep it safe for RouterOS file contents (data-URI grows ~33%).
-      // Also limit total HTML size to stay under RouterOS API limits (~256KB)
-      if (f.bytes!.length > 180 * 1024) {
-        setState(() => _status = 'Image too large. Please pick an image under ~180KB.');
-        return;
-      }
-
-      final mime = _guessMime(f.extension);
+      // Show loading during compression
       setState(() {
-        if (forLogo) {
-          _logoBytes = f.bytes;
-          _logoMime = mime;
-        } else {
-          _bgBytes = f.bytes;
-          _bgMime = mime;
-        }
-        _status = null;
+        _status = 'Compressing image...';
       });
-      
-      // Auto-save after picking
-      await _saveLocal();
-      _updatePreview();
+
+      try {
+        // COMPRESSION STEP: Aggressively compress to stay under RouterOS API limits
+        // RouterOS API has 64KB limit per word. Base64 grows ~33%, so we need <45KB binary
+        final optimizedBytes = await ImageOptimizer.compressForRouter(
+          f.bytes!,
+          isLogo: forLogo,
+        );
+
+        // Check size after compression (45KB limit to allow for Base64 growth to ~60KB)
+        if (optimizedBytes.length > 45 * 1024) {
+          setState(() {
+            _status = 'Image still too large after compression (${(optimizedBytes.length / 1024).toStringAsFixed(1)}KB). '
+                'Please use a simpler image.';
+          });
+          return;
+        }
+
+        setState(() {
+          if (forLogo) {
+            _logoBytes = optimizedBytes;
+            _logoMime = 'image/jpeg'; // Always JPEG after compression
+          } else {
+            _bgBytes = optimizedBytes;
+            _bgMime = 'image/jpeg'; // Always JPEG after compression
+          }
+          _status = null;
+        });
+
+        // Auto-save after picking
+        await _saveLocal();
+        _updatePreview();
+      } catch (e) {
+        setState(() => _status = 'Compression failed: $e');
+        debugPrint('Image compression error: $e');
+      }
     } catch (e) {
       setState(() => _status = 'Error picking image: $e');
       debugPrint('Image picker error: $e');

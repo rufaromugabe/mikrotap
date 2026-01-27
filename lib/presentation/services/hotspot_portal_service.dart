@@ -111,43 +111,38 @@ class HotspotPortalService {
     RouterOsApiClient c, {
     required PortalBranding branding,
   }) async {
-    // Generate directory name: mkt_<random_hash>
-    final randomHash = _generateRandomHash();
-    final directoryName = 'mkt_$randomHash';
+    // Use static directory name for easier management (MikroTicket style)
+    const directoryName = 'mikrotap_portal';
 
-    // Generate HTML content and validate size
+    // Generate all HTML/CSS content
     final loginHtml = _loginHtml(branding, previewMode: false);
-    final loginSize = loginHtml.length; // String length in UTF-16 code units
-    
-    // RouterOS API has word size limits (typically 64KB per word)
-    // Warn if HTML is too large (with some safety margin)
-    // Estimate: each character is ~1 byte in UTF-8, but base64 is 4/3 size
-    if (loginSize > 50 * 1024) {
-      throw RouterOsApiException(
-        'HTML file too large (${(loginSize / 1024).toStringAsFixed(1)}KB). '
-        'Please use smaller images (under ~150KB each) or remove images.',
-      );
-    }
+    final logoutHtml = _logoutHtml(branding);
+    final statusHtml = _statusHtml(branding);
+    final styleCss = _exactStyleCss(branding, false);
+    final md5Js = _md5Js();
 
-    // 1. Push Root Files (images are inlined as data URIs in HTML)
-    // Add small delays between uploads to prevent connection issues
-    await _upsertFile(c, name: '$directoryName/login.html', contents: loginHtml);
-    await Future.delayed(const Duration(milliseconds: 300));
-    
-    await _upsertFile(c, name: '$directoryName/logout.html', contents: _logoutHtml(branding));
-    await Future.delayed(const Duration(milliseconds: 300));
-    
-    await _upsertFile(c, name: '$directoryName/status.html', contents: _statusHtml(branding));
-    await Future.delayed(const Duration(milliseconds: 300));
-    
-    await _upsertFile(c, name: '$directoryName/md5.js', contents: _md5Js());
-    await Future.delayed(const Duration(milliseconds: 300));
+    // 1. Create the directory by creating a dummy file
+    // RouterOS creates folders automatically when a file is added to a path
+    await _upsertFileChunked(c, '$directoryName/.init', 'init');
 
-    // 2. Push CSS Directory
-    await _upsertFile(c, name: '$directoryName/css/style.css', contents: _exactStyleCss(branding, false));
-    await Future.delayed(const Duration(milliseconds: 300));
+    // 2. Upload files using the Chunked Method (handles files >64KB)
+    await _upsertFileChunked(c, '$directoryName/login.html', loginHtml);
+    await Future.delayed(const Duration(milliseconds: 200));
+    
+    await _upsertFileChunked(c, '$directoryName/logout.html', logoutHtml);
+    await Future.delayed(const Duration(milliseconds: 200));
+    
+    await _upsertFileChunked(c, '$directoryName/status.html', statusHtml);
+    await Future.delayed(const Duration(milliseconds: 200));
+    
+    await _upsertFileChunked(c, '$directoryName/md5.js', md5Js);
+    await Future.delayed(const Duration(milliseconds: 200));
 
-    // 3. Point Hotspot Profile to this folder
+    // 3. Push CSS Directory
+    await _upsertFileChunked(c, '$directoryName/css/style.css', styleCss);
+    await Future.delayed(const Duration(milliseconds: 200));
+
+    // 4. Point Hotspot Profile to this folder
     final profileId = await c.findId('/ip/hotspot/profile/print', key: 'name', value: 'mikrotap');
     if (profileId != null) {
       await c.setById(
@@ -161,19 +156,6 @@ class HotspotPortalService {
     }
   }
 
-  static String _generateRandomHash() {
-    // Generate a simple random hash (8 characters alphanumeric)
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    final random = DateTime.now().millisecondsSinceEpoch;
-    final buffer = StringBuffer();
-    var value = random;
-    for (var i = 0; i < 8; i++) {
-      buffer.write(chars[value % chars.length]);
-      value ~/= chars.length;
-    }
-    return buffer.toString();
-  }
-
   /// Builds the same `login.html` content we upload to RouterOS, but with
   /// MikroTik variables replaced by placeholders so it can be rendered in-app
   /// (WebView preview).
@@ -181,7 +163,104 @@ class HotspotPortalService {
     return _loginHtml(branding, previewMode: true);
   }
 
-  static Future<void> _upsertFile(
+  /// Chunked file upload to handle files larger than RouterOS API 64KB limit.
+  /// 
+  /// Splits content into <35KB chunks, stores them in temporary scripts,
+  /// and concatenates them on the router side into the final file.
+  /// This is the MikroTicket-style approach for handling large portal files.
+  static Future<void> _upsertFileChunked(
+    RouterOsApiClient c,
+    String fileName,
+    String contents,
+  ) async {
+    const int chunkSize = 35000; // Safely under the 64KB API word limit
+    
+    // If content fits in one chunk, use simple upload
+    if (contents.length <= chunkSize) {
+      await _upsertFileSimple(c, name: fileName, contents: contents);
+      return;
+    }
+
+    // Split content into chunks
+    final List<String> chunks = [];
+    for (var i = 0; i < contents.length; i += chunkSize) {
+      final end = (i + chunkSize > contents.length) ? contents.length : i + chunkSize;
+      chunks.add(contents.substring(i, end));
+    }
+
+    // 1. Create or clear the target file first
+    final existingFile = await c.findOne('/file/print', key: 'name', value: fileName);
+    if (existingFile == null) {
+      await c.add('/file/add', {'name': fileName, 'contents': ''});
+    } else {
+      await c.setById('/file/set', id: existingFile['.id']!, attrs: {'contents': ''});
+    }
+
+    // 2. Process each chunk using RouterOS scripts as temporary buffers
+    for (int i = 0; i < chunks.length; i++) {
+      final scriptName = 'mikrotap_chunk_$i';
+      
+      // Clean up old script if it exists
+      final oldScriptId = await c.findId('/system/script/print', key: 'name', value: scriptName);
+      if (oldScriptId != null) {
+        await c.removeById('/system/script/remove', id: oldScriptId);
+      }
+
+      // Upload chunk to script source (scripts can hold larger data)
+      await c.add('/system/script/add', {
+        'name': scriptName,
+        'source': chunks[i],
+        'policy': 'read,write,policy,test',
+      });
+
+      // Create a script that appends this chunk to the file
+      // RouterOS script: read current file, append chunk, write back
+      final appendScriptName = 'mikrotap_append_$i';
+      final appendScriptId = await c.findId('/system/script/print', key: 'name', value: appendScriptName);
+      if (appendScriptId != null) {
+        await c.removeById('/system/script/remove', id: appendScriptId);
+      }
+
+      // Escape quotes in fileName for RouterOS script
+      final escapedFileName = fileName.replaceAll('"', '\\"');
+      final escapedScriptName = scriptName.replaceAll('"', '\\"');
+      
+      // RouterOS script to append chunk to file
+      // Note: $ in RouterOS scripts needs escaping as \$ in Dart strings
+      final appendScriptSource = '''
+:local current [/file get [find name="$escapedFileName"] contents];
+:local chunk [/system script get [find name="$escapedScriptName"] source];
+/file set [find name="$escapedFileName"] contents=(\$current . \$chunk);
+''';
+
+      await c.add('/system/script/add', {
+        'name': appendScriptName,
+        'source': appendScriptSource,
+        'policy': 'read,write,policy,test',
+      });
+
+      // Run the append script
+      final appendId = await c.findId('/system/script/print', key: 'name', value: appendScriptName);
+      if (appendId != null) {
+        await c.command(['/system/script/run', '=.id=$appendId']);
+      }
+
+      // Cleanup both scripts
+      final chunkScriptId = await c.findId('/system/script/print', key: 'name', value: scriptName);
+      if (chunkScriptId != null) {
+        await c.removeById('/system/script/remove', id: chunkScriptId);
+      }
+      if (appendId != null) {
+        await c.removeById('/system/script/remove', id: appendId);
+      }
+      
+      // Small delay to let the Router CPU process
+      await Future.delayed(const Duration(milliseconds: 150));
+    }
+  }
+
+  /// Simple file upload for small files (fits in one API call).
+  static Future<void> _upsertFileSimple(
     RouterOsApiClient c, {
     required String name,
     required String contents,
