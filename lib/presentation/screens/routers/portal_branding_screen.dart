@@ -68,20 +68,6 @@ class _PortalBrandingScreenState extends ConsumerState<PortalBrandingScreen> {
     return 'data:$m;base64,${base64Encode(bytes)}';
   }
 
-  String _guessMime(String? ext) {
-    switch ((ext ?? '').toLowerCase()) {
-      case 'jpg':
-      case 'jpeg':
-        return 'image/jpeg';
-      case 'png':
-        return 'image/png';
-      case 'webp':
-        return 'image/webp';
-      default:
-        return 'image/png';
-    }
-  }
-
   Future<void> _pickImage({required bool forLogo}) async {
     try {
       setState(() => _status = null);
@@ -123,18 +109,18 @@ class _PortalBrandingScreenState extends ConsumerState<PortalBrandingScreen> {
       });
 
       try {
-        // COMPRESSION STEP: Aggressively compress to stay under RouterOS API limits
-        // RouterOS API has 64KB limit per word. Base64 grows ~33%, so we need <45KB binary
+        // COMPRESSION STEP: Compress images for optimal portal performance
+        // With chunked uploading, we can handle larger images (up to 150KB)
         final optimizedBytes = await ImageOptimizer.compressForRouter(
           f.bytes!,
           isLogo: forLogo,
         );
 
-        // Check size after compression (45KB limit to allow for Base64 growth to ~60KB)
-        if (optimizedBytes.length > 45 * 1024) {
+        // Check size after compression (150KB limit - chunked upload handles large files)
+        if (optimizedBytes.length > 150 * 1024) {
           setState(() {
             _status = 'Image still too large after compression (${(optimizedBytes.length / 1024).toStringAsFixed(1)}KB). '
-                'Please use a simpler image.';
+                'Maximum size is 150KB. Please use a smaller or simpler image.';
           });
           return;
         }
@@ -142,10 +128,10 @@ class _PortalBrandingScreenState extends ConsumerState<PortalBrandingScreen> {
         setState(() {
           if (forLogo) {
             _logoBytes = optimizedBytes;
-            _logoMime = 'image/jpeg'; // Always JPEG after compression
+            _logoMime = ImageOptimizer.getMimeType(isLogo: true); // PNG for logos
           } else {
             _bgBytes = optimizedBytes;
-            _bgMime = 'image/jpeg'; // Always JPEG after compression
+            _bgMime = ImageOptimizer.getMimeType(isLogo: false); // JPEG for backgrounds
           }
           _status = null;
         });
@@ -242,6 +228,20 @@ class _PortalBrandingScreenState extends ConsumerState<PortalBrandingScreen> {
       'bgB64': _bgBytes == null ? null : base64Encode(_bgBytes!),
     };
     await prefs.setString(_prefsKey(session.routerId), jsonEncode(data));
+  }
+
+  Future<void> _saveOnly() async {
+    try {
+      await _saveLocal();
+      if (mounted) {
+        setState(() => _status = 'Portal configuration saved locally.');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _status = 'Save failed: $e');
+      }
+      debugPrint('Save error: $e');
+    }
   }
 
   Future<void> _applyToRouter() async {
@@ -417,16 +417,38 @@ class _PortalBrandingScreenState extends ConsumerState<PortalBrandingScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed: _loading ? null : _applyToRouter,
-              icon: _loading
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.cloud_upload),
-              label: const Text('Apply to router'),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _loading ? null : _saveOnly,
+                    icon: const Icon(Icons.save_outlined),
+                    label: const Text('Save'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: FilledButton.icon(
+                    onPressed: _loading ? null : _applyToRouter,
+                    icon: _loading
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.cloud_upload),
+                    label: const Text('Apply to router'),
+                  ),
+                ),
+              ],
             ),
             if (_status != null) ...[
               const SizedBox(height: 12),
-              Text(_status!),
+              Text(
+                _status!,
+                style: TextStyle(
+                  color: _status!.startsWith('Apply failed') || _status!.startsWith('Save failed')
+                      ? Theme.of(context).colorScheme.error
+                      : Theme.of(context).colorScheme.primary,
+                ),
+              ),
             ],
           ],
         ),

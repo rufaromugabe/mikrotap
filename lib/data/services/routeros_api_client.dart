@@ -228,7 +228,9 @@ class RouterOsApiClient {
       final len = await _readLength();
       if (len == 0) break;
       final data = await _readBytes(len);
-      words.add(utf8.decode(data));
+      // Use allowMalformed to handle cases where RouterOS returns
+      // binary data or invalid UTF-8 sequences (e.g., file contents)
+      words.add(utf8.decode(data, allowMalformed: true));
     }
     return RouterOsSentence.fromWords(words);
   }

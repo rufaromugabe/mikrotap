@@ -121,9 +121,38 @@ class HotspotPortalService {
     final styleCss = _exactStyleCss(branding, false);
     final md5Js = _md5Js();
 
-    // 1. Create the directory by creating a dummy file
-    // RouterOS creates folders automatically when a file is added to a path
-    await _upsertFileChunked(c, '$directoryName/.init', 'init');
+    // 1. Ensure the directory exists by creating it explicitly
+    // RouterOS requires directories to be created with type=directory
+    final dirExists = await c.findOne('/file/print', key: 'name', value: directoryName);
+    if (dirExists == null) {
+      try {
+        await c.add('/file/add', {
+          'name': directoryName,
+          'type': 'directory',
+        });
+        // Small delay to ensure directory is created
+        await Future.delayed(const Duration(milliseconds: 100));
+      } catch (e) {
+        // Directory might already exist or creation might fail, continue anyway
+        // RouterOS may auto-create directories when files are added
+      }
+    }
+    
+    // Also ensure css subdirectory exists
+    final cssDirName = '$directoryName/css';
+    final cssDirExists = await c.findOne('/file/print', key: 'name', value: cssDirName);
+    if (cssDirExists == null) {
+      try {
+        await c.add('/file/add', {
+          'name': cssDirName,
+          'type': 'directory',
+        });
+        // Small delay to ensure directory is created
+        await Future.delayed(const Duration(milliseconds: 100));
+      } catch (e) {
+        // Ignore errors - RouterOS may auto-create directories when files are added
+      }
+    }
 
     // 2. Upload files using the Chunked Method (handles files >64KB)
     await _upsertFileChunked(c, '$directoryName/login.html', loginHtml);
@@ -189,9 +218,24 @@ class HotspotPortalService {
     }
 
     // 1. Create or clear the target file first
+    // RouterOS requires 'type=file' for file creation
+    // Note: RouterOS accepts forward slashes in filenames for subdirectories
     final existingFile = await c.findOne('/file/print', key: 'name', value: fileName);
     if (existingFile == null) {
-      await c.add('/file/add', {'name': fileName, 'contents': ''});
+      try {
+        await c.add('/file/add', {
+          'name': fileName,
+          'type': 'file',
+          'contents': '',
+        });
+      } catch (e) {
+        // If file creation fails, it might be due to invalid filename format
+        // RouterOS might require the directory to exist first
+        throw RouterOsApiException(
+          'Failed to create file "$fileName": $e. '
+          'Ensure the directory structure exists.',
+        );
+      }
     } else {
       await c.setById('/file/set', id: existingFile['.id']!, attrs: {'contents': ''});
     }
@@ -268,7 +312,12 @@ class HotspotPortalService {
     final rows = await c.printRows('/file/print', queries: ['?name=$name']);
     final id = rows.isNotEmpty ? rows.first['.id'] : null;
     if (id == null || id.isEmpty) {
-      await c.add('/file/add', {'name': name, 'contents': contents});
+      // RouterOS requires 'type=file' for file creation
+      await c.add('/file/add', {
+        'name': name,
+        'type': 'file',
+        'contents': contents,
+      });
       return;
     }
     await c.setById('/file/set', id: id, attrs: {'contents': contents});
@@ -285,10 +334,11 @@ class HotspotPortalService {
     String bgStyle;
     if (b.backgroundDataUri != null && b.backgroundDataUri!.trim().isNotEmpty) {
       // Use data URI directly (works in both preview and router mode)
-      bgStyle = 'background: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url(${b.backgroundDataUri}) center/cover no-repeat !important;';
+      // Fixed background that covers entire screen and doesn't repeat
+      bgStyle = 'background: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url(${b.backgroundDataUri}) center center / cover no-repeat fixed !important; min-height: 100vh;';
     } else {
       // Fallback to theme background
-      bgStyle = 'background: ${preset.bgCss} !important;';
+      bgStyle = 'background: ${preset.bgCss} !important; min-height: 100vh;';
     }
 
     // 2. Handle Logo Data - ALWAYS use data URI (inlined in HTML)
@@ -320,7 +370,7 @@ class HotspotPortalService {
     $cssLink
     ${previewMode ? '<style>$cssContent</style>' : ''}
 </head>
-<body style="$bgStyle">
+<body style="$bgStyle; margin:0; padding:0; width:100%; min-height:100vh; overflow-x:hidden;">
     $ifChapStart
     <form name="sendin" action="$formAction" method="post" style="display:none">
         <input type="hidden" name="username" />
@@ -365,6 +415,14 @@ class HotspotPortalService {
                 </form>
             </div>
 
+            ${b.supportText.isNotEmpty ? '''
+            <div class="info-section">
+                <div class="info-content">
+                    ${_escapeHtml(b.supportText).replaceAll('\n', '<br>')}
+                </div>
+            </div>
+            ''' : ''}
+
             <script>
                 var mode = 'pin';
                 function switchTab(t) {
@@ -397,21 +455,23 @@ class HotspotPortalService {
     // For router mode, return the original CSS
     if (!previewMode) {
       return '''
-body,html{min-height:100%; margin:0; font-family:sans-serif;}
-body{ background: linear-gradient(135deg, #2c3e50, #000000); display:flex; justify-content:center; align-items:center;}
-.wrap{ width: 100%; max-width: 410px; padding: 20px;}
-.form-container { text-align: center; background-color:rgba(255, 255, 255, 0.8); border-radius:10px; padding:20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);}
-.tabs { display: flex; justify-content: center; margin-bottom: 20px; list-style: none; padding: 0; border-bottom: 1px solid rgba(7, 7, 10, 0.2);}
-.tab { flex: 1; text-align: center; padding: 10px; cursor: pointer; border-bottom: 1px solid #ccc; font-size: 20px;}
+* { box-sizing: border-box; }
+body,html{min-height:100vh; margin:0; padding:0; font-family:sans-serif; width:100%; overflow-x:hidden;}
+body{ background: linear-gradient(135deg, #2c3e50, #000000); background-size: cover; background-position: center; background-attachment: fixed; display:flex; justify-content:center; align-items:center; width:100%;}
+.main { width: 100%; max-width: 100%; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+.wrap{ width: 100%; max-width: 410px; padding: 20px; margin: 0 auto; }
+.form-container { text-align: center; background-color:rgba(255, 255, 255, 0.8); border-radius:10px; padding:20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); margin-bottom: 15px; width:100%; }
+.tabs { display: flex; justify-content: center; margin-bottom: 20px; list-style: none; padding: 0; border-bottom: 1px solid rgba(7, 7, 10, 0.2); width:100%; }
+.tab { flex: 1; text-align: center; padding: 10px; cursor: pointer; border-bottom: 1px solid #ccc; font-size: 20px; }
 .tab.active { border-bottom: 3px solid #07070a; }
 .hidden { display: none; }
-.input-text { width: 100%; border: 1px solid #07070a; height: 44px; padding: 10px; margin-bottom: 10px; border-radius: 10px; box-sizing: border-box;}
-.button-submit { background: #07070a; color: #fff; border: 0; width: 100%; height: 44px; border-radius: 10px; cursor: pointer; font-weight: bold;}
-.info { color: #07070a; margin-bottom: 15px; font-size: 14px;}
-.info.alert { color: #da3d41; font-weight: bold;}
-label { display: block; }
-.ie-fixMinHeight { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-.main { width: 100%; }
+.input-text { width: 100%; border: 1px solid #07070a; height: 44px; padding: 10px; margin-bottom: 10px; border-radius: 10px; box-sizing: border-box; }
+.button-submit { background: #07070a; color: #fff; border: 0; width: 100%; height: 44px; border-radius: 10px; cursor: pointer; font-weight: bold; }
+.info { color: #07070a; margin-bottom: 15px; font-size: 14px; }
+.info.alert { color: #da3d41; font-weight: bold; }
+.info-section { margin-top: 15px; text-align: center; width:100%; }
+.info-content { background-color: rgba(255, 255, 255, 0.9); border-radius: 10px; padding: 15px 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); color: #07070a; font-size: 13px; line-height: 1.6; width:100%; }
+label { display: block; width:100%; }
 .animated { animation: fadeIn 0.5s; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 ''';
@@ -446,6 +506,20 @@ body, html {
     border-radius: 12px; 
     padding: 20px; 
     box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+    margin-bottom: 15px;
+}
+.info-section {
+    margin-top: 15px;
+    text-align: center;
+}
+.info-content {
+    background-color: rgba(255, 255, 255, 0.95);
+    border-radius: 12px;
+    padding: 15px 20px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    color: #333;
+    font-size: 13px;
+    line-height: 1.7;
 }
 .tabs { 
     display: flex; 
