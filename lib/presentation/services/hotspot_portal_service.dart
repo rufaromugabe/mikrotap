@@ -346,15 +346,15 @@ class HotspotPortalService {
     final showLogo = b.logoDataUri != null && b.logoDataUri!.isNotEmpty;
 
     // 3. Mock Variables for Preview
-    final formAction = previewMode ? '#' : r'\$(link-login-only)';
-    final usernameVal = previewMode ? '' : r'value="\$(username)" ';
+    final formAction = previewMode ? '#' : r'$(link-login-only)';
+    final usernameVal = previewMode ? '' : r'value="$(username)" ';
     
-    // Logic Stripping
-    final ifChapStart = previewMode ? '' : r'\$(if chap-id)';
-    final ifChapEnd = previewMode ? '' : r'\$(endif)';
+    // Logic Stripping - RouterOS variables (no backslashes, RouterOS processes these)
+    final ifChapStart = previewMode ? '' : r'$(if chap-id)';
+    final ifChapEnd = previewMode ? '' : r'$(endif)';
     final errorBlock = previewMode 
         ? '<p class="info">Welcome to $title</p>' 
-        : r'\$(if error)<p class="info alert">\$(error)</p>\$(endif)';
+        : r'$(if error)<p class="info alert">$(error)</p>$(endif)';
 
     // CSS: inline in preview, external link for router
     final cssLink = previewMode ? '' : '<link rel="stylesheet" href="css/style.css">';
@@ -371,8 +371,7 @@ class HotspotPortalService {
     ${previewMode ? '<style>$cssContent</style>' : ''}
 </head>
 <body style="$bgStyle; margin:0; padding:0; width:100%; min-height:100vh; overflow-x:hidden;">
-    $ifChapStart
-    <form name="sendin" action="$formAction" method="post" style="display:none">
+    $ifChapStart<form name="sendin" action="$formAction" method="post" style="display:none">
         <input type="hidden" name="username" />
         <input type="hidden" name="password" />
         <input type="hidden" name="dst" value="" />
@@ -382,14 +381,13 @@ class HotspotPortalService {
     <script>
         function doLogin() {
             document.sendin.username.value = document.login.username.value;
-            var chal = '${previewMode ? "123" : r"\$(chap-challenge)"}';
-            var cid = '${previewMode ? "abc" : r"\$(chap-id)"}';
+            var chal = '${previewMode ? "123" : r"$(chap-challenge)"}';
+            var cid = '${previewMode ? "abc" : r"$(chap-id)"}';
             document.sendin.password.value = hexMD5(cid + document.login.password.value + chal);
             document.sendin.submit();
             return false;
         }
-    </script>
-    $ifChapEnd
+    </script>$ifChapEnd
 
     <div class="main">
         <div class="wrap animated fadeIn">
@@ -401,7 +399,7 @@ class HotspotPortalService {
                     <li class="tab" id="tUser" onclick="switchTab('user')">👤 User</li>
                 </ul>
             
-                <form name="login" action="$formAction" method="post" ${previewMode ? 'onsubmit="return doLogin()"' : r'\$(if chap-id) onSubmit="return doLogin()" \$(endif)'} id="loginForm">
+                <form name="login" action="$formAction" method="post"${previewMode ? ' onsubmit="return doLogin()"' : r' $(if chap-id) onSubmit="return doLogin()" $(endif)'} id="loginForm">
                     $errorBlock
                     <label>
                         <input name="username" id="mainInput" class="input-text" type="text" $usernameVal placeholder="PIN Code" autocomplete="off" />
