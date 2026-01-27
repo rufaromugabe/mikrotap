@@ -333,7 +333,7 @@ class HotspotPortalService {
       primaryHex: primaryHex,
       backgroundDataUri: b.backgroundDataUri,
     );
-    final bgStyle = 'background: $bgCss !important; min-height: 100vh;';
+    final bgStyle = 'background: $bgCss !important; background-size: cover !important; background-position: center !important; background-repeat: no-repeat !important; min-height: 100vh;';
 
     // 2. Handle Logo Data - ALWAYS use data URI (inlined in HTML)
     final logoSrc = b.logoDataUri ?? '';
