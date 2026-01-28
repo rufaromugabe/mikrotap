@@ -1,10 +1,16 @@
+import 'dart:async';
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../data/models/voucher.dart';
+import '../../../data/services/routeros_api_client.dart';
+import '../../providers/active_router_provider.dart';
 import '../../providers/router_providers.dart';
 import '../../providers/voucher_providers.dart';
+import '../routers/router_initialization_screen.dart';
 
 class ReportsScreen extends ConsumerStatefulWidget {
   const ReportsScreen({super.key});
@@ -17,6 +23,48 @@ class ReportsScreen extends ConsumerStatefulWidget {
 
 class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   int _days = 7;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkInitialization();
+  }
+
+  Future<void> _checkInitialization() async {
+    final session = ref.read(activeRouterProvider);
+    if (session == null || !mounted) return;
+
+    final client = RouterOsApiClient(
+      host: session.host,
+      port: 8728,
+      timeout: const Duration(seconds: 5),
+    );
+
+    try {
+      await client.login(username: session.username, password: session.password);
+      final hotspotRows = await client.printRows('/ip/hotspot/print');
+      final hasHotspot = hotspotRows.isNotEmpty;
+
+      if (!mounted) return;
+
+      // If hotspot is not configured, redirect to initialization
+      if (!hasHotspot) {
+        context.go(
+          RouterInitializationScreen.routePath,
+          extra: RouterInitializationArgs(
+            host: session.host,
+            username: session.username,
+            password: session.password,
+          ),
+        );
+      }
+    } catch (e) {
+      // If check fails, allow access (connection might be temporary issue)
+      debugPrint('Initialization check failed: $e');
+    } finally {
+      await client.close();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

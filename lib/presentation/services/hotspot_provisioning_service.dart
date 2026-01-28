@@ -309,15 +309,16 @@ class HotspotProvisioningService {
     onProgress?.call('Enabling DNS for clients…');
     await c.command(['/ip/dns/set', '=allow-remote-requests=yes']);
 
-    // H) Hotspot profile
+    // H) Hotspot profile (MikroTicket-compatible settings)
     onProgress?.call('Creating hotspot profile…');
     final hsProfiles = await c.printRows('/ip/hotspot/profile/print');
     final existingProfile = hsProfiles.where((r) => (r['name'] ?? '') == hsProfile).toList();
     final profileAttrs = <String, String>{
       'hotspot-address': gateway,
       'dns-name': (dnsName ?? '').trim().isNotEmpty ? (dnsName ?? '').trim() : 'hotspot.mikrotap.com',
-      'login-by': 'cookie,http-chap,http-pap,mac-cookie',
-      'http-cookie-lifetime': '3d',
+      'html-directory': 'mikrotap_portal', // Portal directory (set by portal service)
+      'login-by': 'cookie,http-chap,http-pap,mac-cookie', // Match MikroTicket: includes mac-cookie
+      'http-cookie-lifetime': '3d', // Match MikroTicket
     };
     if (existingProfile.isEmpty) {
       profileAttrs['name'] = hsProfile;
@@ -329,27 +330,27 @@ class HotspotProvisioningService {
       }
     }
 
-    // I) Hotspot server
+    // I) Hotspot server (MikroTicket-compatible settings)
     onProgress?.call('Creating hotspot server…');
     final hsServers = await c.printRows('/ip/hotspot/print');
     final existingServer = hsServers.where((r) => (r['name'] ?? '') == hsServer).toList();
+    final serverAttrs = <String, String>{
+      'interface': accessInterface,
+      'profile': hsProfile,
+      'address-pool': pool,
+      'idle-timeout': 'none', // Match MikroTicket (was 5m)
+      'keepalive-timeout': 'none', // Match MikroTicket
+      'login-timeout': 'none', // Match MikroTicket
+      'addresses-per-mac': '1', // Match MikroTicket (was 2)
+      'disabled': 'no',
+    };
     if (existingServer.isEmpty) {
-      await c.add('/ip/hotspot/add', {
-        'name': hsServer,
-        'interface': accessInterface,
-        'profile': hsProfile,
-        'address-pool': pool,
-        'disabled': 'no',
-      });
+      serverAttrs['name'] = hsServer;
+      await c.add('/ip/hotspot/add', serverAttrs);
     } else {
       final id = existingServer.first['.id'];
       if (id != null) {
-        await c.setById('/ip/hotspot/set', id: id, attrs: {
-          'interface': accessInterface,
-          'profile': hsProfile,
-          'address-pool': pool,
-          'disabled': 'no',
-        });
+        await c.setById('/ip/hotspot/set', id: id, attrs: serverAttrs);
       }
     }
 
@@ -361,15 +362,25 @@ class HotspotProvisioningService {
       clientIsolation: clientIsolation,
     );
 
-    // I2) Hotspot user profile (used by vouchers)
+    // I2) Hotspot user profile (MikroTicket-compatible settings)
     onProgress?.call('Ensuring voucher profile exists…');
     final userProfiles = await c.printRows('/ip/hotspot/user/profile/print');
-    final hasUserProfile = userProfiles.any((r) => (r['name'] ?? '') == hsUserProfile);
-    if (!hasUserProfile) {
-      await c.add('/ip/hotspot/user/profile/add', {
-        'name': hsUserProfile,
-        'shared-users': '1',
-      });
+    final existingUserProfile = userProfiles.where((r) => (r['name'] ?? '') == hsUserProfile).toList();
+    final userProfileAttrs = <String, String>{
+      'keepalive-timeout': '4w2d', // Match MikroTicket (was 2m)
+      'shared-users': '3', // Match MikroTicket (was 1)
+      'mac-cookie-timeout': '4w2d', // Match MikroTicket (was 3d)
+      'status-autorefresh': '1m',
+      'add-mac-cookie': 'yes',
+    };
+    if (existingUserProfile.isEmpty) {
+      userProfileAttrs['name'] = hsUserProfile;
+      await c.add('/ip/hotspot/user/profile/add', userProfileAttrs);
+    } else {
+      final id = existingUserProfile.first['.id'];
+      if (id != null) {
+        await c.setById('/ip/hotspot/user/profile/set', id: id, attrs: userProfileAttrs);
+      }
     }
 
     // I4) Configure Walled Garden for Captive Portal Detection
@@ -402,23 +413,35 @@ class HotspotProvisioningService {
       }
     }
 
-    // J) NAT (optional)
+    // J) NAT (MikroTicket-compatible: use src-address when using bridge)
     if (wanInterface != null && wanInterface.isNotEmpty) {
       onProgress?.call('Configuring NAT…');
       final natRows = await c.printRows('/ip/firewall/nat/print');
       final natExisting = natRows.where((r) => (r['comment'] ?? '') == natComment).toList();
+      
+      // Check if access interface is a bridge
+      final isBridge = accessInterface.toLowerCase().contains('bridge');
+      
+      final natAttrs = <String, String>{
+        'chain': 'srcnat',
+        'action': 'masquerade',
+        'comment': natComment,
+      };
+      
+      // MikroTicket uses src-address for bridge interfaces to avoid slave interface issues
+      if (isBridge) {
+        natAttrs['src-address'] = network;
+      } else {
+        natAttrs['out-interface'] = wanInterface;
+      }
+      
       if (natExisting.isEmpty) {
-        await c.add('/ip/firewall/nat/add', {
-          'chain': 'srcnat',
-          'action': 'masquerade',
-          'out-interface': wanInterface,
-          'comment': natComment,
-        });
+        await c.add('/ip/firewall/nat/add', natAttrs);
       } else {
         final id = natExisting.first['.id'];
         if (id != null) {
           await c.setById('/ip/firewall/nat/set', id: id, attrs: {
-            'out-interface': wanInterface,
+            ...natAttrs,
             'disabled': 'no',
           });
         }

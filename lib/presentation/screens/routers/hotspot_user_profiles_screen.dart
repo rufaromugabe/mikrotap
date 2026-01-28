@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../providers/active_router_provider.dart';
 import '../../providers/voucher_providers.dart';
+import '../../mixins/router_auth_mixin.dart';
 import '../../../data/models/hotspot_plan.dart';
 import 'router_home_screen.dart';
 
@@ -18,7 +19,7 @@ class HotspotUserProfilesScreen extends ConsumerStatefulWidget {
   ConsumerState<HotspotUserProfilesScreen> createState() => _HotspotUserProfilesScreenState();
 }
 
-class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesScreen> {
+class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesScreen> with RouterAuthMixin {
   bool _loading = false;
   String? _status;
   List<HotspotPlan> _plans = const [];
@@ -26,6 +27,7 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
   @override
   void initState() {
     super.initState();
+    verifyRouterConnection(); // Verify connection on page load
     unawaited(_refresh());
   }
 
@@ -777,6 +779,11 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
         appBar: AppBar(title: const Text('Plans')),
         body: const Center(child: Text('No active router. Connect to a router first.')),
       );
+    }
+
+    // Show loading while verifying connection
+    if (isVerifyingConnection) {
+      return buildConnectionVerifyingWidget();
     }
 
     return Scaffold(

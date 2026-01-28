@@ -53,7 +53,8 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // Logged in: keep users out of auth screens.
       if (isSplashing || isLoggingIn) {
-        return active == null ? RoutersScreen.routePath : RouterHomeScreen.routePath;
+        // Don't auto-redirect to RouterHomeScreen - let RouterHomeScreen check initialization
+        return active == null ? RoutersScreen.routePath : null;
       }
 
       // Router-first: guard workspace routes if no active router.

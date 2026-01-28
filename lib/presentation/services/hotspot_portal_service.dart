@@ -611,12 +611,13 @@ class HotspotPortalService {
     }
   }
 
-  /// Recursively upload directory contents via FTP
-  static Future<void> _uploadDirectoryRecursive(
-    FTPConnect ftp,
+  /// Recursively collect all files and directories for optimized batch upload
+  static void _collectFilesAndDirs(
     Directory localDir,
     String remoteBasePath,
-  ) async {
+    Map<String, List<File>> filesByDir,
+    Set<String> directoriesToCreate,
+  ) {
     final entries = localDir.listSync(recursive: false);
     
     for (final entry in entries) {
@@ -624,60 +625,87 @@ class HotspotPortalService {
         final relativePath = path.relative(entry.path, from: localDir.path);
         final remoteDir = path.dirname(path.join(remoteBasePath, relativePath)).replaceAll('\\', '/');
         
-        // Ensure parent directory exists on remote
+        // Track directory for creation
         if (remoteDir != remoteBasePath) {
-          try {
-            await ftp.changeDirectory(remoteDir);
-          } catch (e) {
-            // Create directory structure if needed
-            final parts = remoteDir.split('/').where((p) => p.isNotEmpty).toList();
-            String currentPath = '';
-            for (final part in parts) {
-              currentPath = currentPath.isEmpty ? '/$part' : '$currentPath/$part';
-              try {
-                await ftp.changeDirectory(currentPath);
-              } catch (e) {
-                await ftp.makeDirectory(currentPath);
-                await ftp.changeDirectory(currentPath);
-              }
-            }
-          }
-        } else {
-          // Change back to base directory
-          await ftp.changeDirectory(remoteBasePath);
+          directoriesToCreate.add(remoteDir);
         }
         
-        // Upload file in binary mode (critical for images - prevents corruption)
-        // Ensure we're in binary mode before uploading binary files
-        try {
-          await ftp.setTransferType(TransferType.binary);
-        } catch (e) {
-          // Some FTP servers might not support explicit binary mode setting
-          // but most modern FTP clients default to binary for binary files
-        }
-        
-        // Upload file with explicit remote name to ensure correct path
-        final remoteFileName = path.basename(entry.path);
-        await ftp.uploadFile(entry, sRemoteName: remoteFileName);
+        // Group files by their remote directory for batch upload
+        filesByDir.putIfAbsent(remoteDir, () => []).add(entry);
       } else if (entry is Directory) {
         final relativePath = path.relative(entry.path, from: localDir.path);
         final remotePath = path.join(remoteBasePath, relativePath).replaceAll('\\', '/');
         
-        // Create remote directory structure
-        final parts = remotePath.split('/').where((p) => p.isNotEmpty).toList();
-        String currentPath = '';
-        for (final part in parts) {
-          currentPath = currentPath.isEmpty ? '/$part' : '$currentPath/$part';
-          try {
-            await ftp.changeDirectory(currentPath);
-          } catch (e) {
-            await ftp.makeDirectory(currentPath);
-            await ftp.changeDirectory(currentPath);
-          }
-        }
+        // Track directory for creation
+        directoriesToCreate.add(remotePath);
         
-        // Recursively upload subdirectory
-        await _uploadDirectoryRecursive(ftp, entry, remotePath);
+        // Recursively collect from subdirectory
+        _collectFilesAndDirs(entry, remotePath, filesByDir, directoriesToCreate);
+      }
+    }
+  }
+
+  /// Recursively upload directory contents via FTP (optimized version)
+  /// 
+  /// Optimizations:
+  /// - Collects all files first to minimize directory changes
+  /// - Creates all directories upfront
+  /// - Groups files by directory to batch uploads
+  /// - Sets binary mode once instead of per-file
+  static Future<void> _uploadDirectoryRecursive(
+    FTPConnect ftp,
+    Directory localDir,
+    String remoteBasePath,
+  ) async {
+    // Collect all files and directories first for optimized batch processing
+    final filesByDir = <String, List<File>>{};
+    final directoriesToCreate = <String>{};
+    
+    _collectFilesAndDirs(localDir, remoteBasePath, filesByDir, directoriesToCreate);
+    
+    // Create all directories upfront (minimize directory changes)
+    // Sort to ensure parent directories are created before children
+    final sortedDirs = directoriesToCreate.toList()..sort();
+    for (final remoteDir in sortedDirs) {
+      final parts = remoteDir.split('/').where((p) => p.isNotEmpty).toList();
+      String currentPath = '';
+      for (final part in parts) {
+        currentPath = currentPath.isEmpty ? '/$part' : '$currentPath/$part';
+        try {
+          await ftp.changeDirectory(currentPath);
+        } catch (e) {
+          await ftp.makeDirectory(currentPath);
+          await ftp.changeDirectory(currentPath);
+        }
+      }
+    }
+    
+    // Set binary mode once (applies to all subsequent uploads)
+    // This avoids the overhead of setting it for each file
+    try {
+      await ftp.setTransferType(TransferType.binary);
+    } catch (e) {
+      // Some FTP servers might not support explicit binary mode setting
+      // but most modern FTP clients default to binary for binary files
+    }
+    
+    // Upload files grouped by directory to minimize directory changes
+    // Process directories in sorted order for consistency
+    final sortedDirEntries = filesByDir.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    
+    for (final dirEntry in sortedDirEntries) {
+      final remoteDir = dirEntry.key;
+      final files = dirEntry.value;
+      
+      // Change to directory once for all files in it
+      await ftp.changeDirectory(remoteDir);
+      
+      // Upload all files in this directory sequentially
+      // (FTP connections are single-threaded, but batching by directory is still faster)
+      for (final file in files) {
+        final remoteFileName = path.basename(file.path);
+        await ftp.uploadFile(file, sRemoteName: remoteFileName);
       }
     }
   }

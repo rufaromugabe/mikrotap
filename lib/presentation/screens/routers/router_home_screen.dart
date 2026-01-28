@@ -1,12 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:fl_chart/fl_chart.dart';
 
 import '../../providers/active_router_provider.dart';
-import '../../providers/auth_providers.dart';
 import '../../providers/router_dashboard_providers.dart';
 import '../../providers/voucher_providers.dart';
+import '../../mixins/router_auth_mixin.dart';
 import '../../../data/services/routeros_api_client.dart';
 import '../vouchers/generate_vouchers_screen.dart';
 import '../vouchers/vouchers_screen.dart';
@@ -25,7 +27,7 @@ class RouterHomeScreen extends ConsumerStatefulWidget {
   ConsumerState<RouterHomeScreen> createState() => _RouterHomeScreenState();
 }
 
-class _RouterHomeScreenState extends ConsumerState<RouterHomeScreen> {
+class _RouterHomeScreenState extends ConsumerState<RouterHomeScreen> with RouterAuthMixin {
   ProviderSubscription<AsyncValue<int>>? _activeUsersSub;
   final List<int> _activeUserSamples = <int>[];
   bool _quickBusy = false;
@@ -34,6 +36,8 @@ class _RouterHomeScreenState extends ConsumerState<RouterHomeScreen> {
   @override
   void initState() {
     super.initState();
+    verifyRouterConnection(); // Verify connection on page load
+    _checkInitialization(); // Check if router is initialized
     _activeUsersSub = ref.listenManual(activeHotspotUsersCountProvider, (prev, next) {
       next.whenData((count) {
         if (!mounted) return;
@@ -45,6 +49,43 @@ class _RouterHomeScreenState extends ConsumerState<RouterHomeScreen> {
         });
       });
     });
+  }
+
+  Future<void> _checkInitialization() async {
+    final session = ref.read(activeRouterProvider);
+    if (session == null || !mounted) return;
+
+    final client = RouterOsApiClient(
+      host: session.host,
+      port: 8728,
+      timeout: const Duration(seconds: 5),
+    );
+
+    try {
+      await client.login(username: session.username, password: session.password);
+      final hotspotRows = await client.printRows('/ip/hotspot/print');
+      final hasHotspot = hotspotRows.isNotEmpty;
+
+      if (!mounted) return;
+
+      // If hotspot is not configured, redirect to initialization
+      if (!hasHotspot) {
+        context.go(
+          RouterInitializationScreen.routePath,
+          extra: RouterInitializationArgs(
+            host: session.host,
+            username: session.username,
+            password: session.password,
+          ),
+        );
+      }
+    } catch (e) {
+      // If check fails, allow access (connection might be temporary issue)
+      // But log for debugging
+      debugPrint('Initialization check failed: $e');
+    } finally {
+      await client.close();
+    }
   }
 
   @override
@@ -104,6 +145,11 @@ class _RouterHomeScreenState extends ConsumerState<RouterHomeScreen> {
           ),
         ),
       );
+    }
+
+    // Show loading while verifying connection
+    if (isVerifyingConnection) {
+      return buildConnectionVerifyingWidget();
     }
 
     final activeUsers = ref.watch(activeHotspotUsersCountProvider);

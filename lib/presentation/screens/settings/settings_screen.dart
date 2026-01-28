@@ -1,16 +1,68 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../data/services/routeros_api_client.dart';
 import '../../providers/active_router_provider.dart';
 import '../../providers/auth_providers.dart';
+import '../routers/router_initialization_screen.dart';
 
-class SettingsScreen extends ConsumerWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   static const routePath = '/settings';
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _checkInitialization();
+  }
+
+  Future<void> _checkInitialization() async {
+    final session = ref.read(activeRouterProvider);
+    if (session == null || !mounted) return;
+
+    final client = RouterOsApiClient(
+      host: session.host,
+      port: 8728,
+      timeout: const Duration(seconds: 5),
+    );
+
+    try {
+      await client.login(username: session.username, password: session.password);
+      final hotspotRows = await client.printRows('/ip/hotspot/print');
+      final hasHotspot = hotspotRows.isNotEmpty;
+
+      if (!mounted) return;
+
+      // If hotspot is not configured, redirect to initialization
+      if (!hasHotspot) {
+        context.go(
+          RouterInitializationScreen.routePath,
+          extra: RouterInitializationArgs(
+            host: session.host,
+            username: session.username,
+            password: session.password,
+          ),
+        );
+      }
+    } catch (e) {
+      // If check fails, allow access (connection might be temporary issue)
+      debugPrint('Initialization check failed: $e');
+    } finally {
+      await client.close();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final auth = ref.watch(authStateProvider);
     final user = auth.maybeWhen(data: (u) => u, orElse: () => null);
     final active = ref.watch(activeRouterProvider);

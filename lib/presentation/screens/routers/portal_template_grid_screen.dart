@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../providers/active_router_provider.dart';
+import '../../mixins/router_auth_mixin.dart';
 import '../../services/hotspot_portal_service.dart';
 import '../../templates/portal_template.dart';
 import 'portal_template_editor_screen.dart';
@@ -20,13 +21,14 @@ class PortalTemplateGridScreen extends ConsumerStatefulWidget {
   ConsumerState<PortalTemplateGridScreen> createState() => _PortalTemplateGridScreenState();
 }
 
-class _PortalTemplateGridScreenState extends ConsumerState<PortalTemplateGridScreen> {
+class _PortalTemplateGridScreenState extends ConsumerState<PortalTemplateGridScreen> with RouterAuthMixin {
   String? _currentThemeId;
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
+    verifyRouterConnection(); // Verify connection on page load
     _loadCurrentTheme();
   }
 
@@ -64,6 +66,11 @@ class _PortalTemplateGridScreenState extends ConsumerState<PortalTemplateGridScr
       return const Scaffold(
         body: SafeArea(child: Center(child: Text('No active router.'))),
       );
+    }
+
+    // Show loading while verifying connection
+    if (isVerifyingConnection) {
+      return buildConnectionVerifyingWidget();
     }
 
     if (_loading) {

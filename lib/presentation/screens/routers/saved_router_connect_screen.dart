@@ -9,6 +9,7 @@ import '../../../data/models/router_entry.dart';
 import '../../../data/services/routeros_api_client.dart';
 import '../../providers/active_router_provider.dart';
 import 'router_home_screen.dart';
+import 'router_initialization_screen.dart';
 import 'routers_screen.dart';
 
 class SavedRouterConnectScreen extends ConsumerStatefulWidget {
@@ -68,6 +69,10 @@ class _SavedRouterConnectScreenState extends ConsumerState<SavedRouterConnectScr
       setState(() => _status = ok ? 'Connected.' : 'Connected, but no data returned.');
 
       if (ok && mounted) {
+        // Check if hotspot is configured before allowing access
+        final hotspotRows = await client.printRows('/ip/hotspot/print');
+        final hasHotspot = hotspotRows.isNotEmpty;
+
         ref.read(activeRouterProvider.notifier).set(
               ActiveRouterSession(
                 routerId: widget.router.id,
@@ -77,8 +82,20 @@ class _SavedRouterConnectScreenState extends ConsumerState<SavedRouterConnectScr
                 password: password,
               ),
             );
-        // For existing routers, go straight into workspace.
-        context.go(RouterHomeScreen.routePath);
+
+        // Always require initialization if hotspot doesn't exist
+        if (hasHotspot) {
+          context.go(RouterHomeScreen.routePath);
+        } else {
+          context.go(
+            RouterInitializationScreen.routePath,
+            extra: RouterInitializationArgs(
+              host: host,
+              username: username,
+              password: password,
+            ),
+          );
+        }
       }
     } on RouterOsApiException catch (e) {
       setState(() => _status = e.message);
