@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import '../../data/services/routeros_api_client.dart';
 import '../templates/portal_template.dart';
 import '../templates/template_registry.dart';
@@ -116,6 +117,42 @@ class HotspotPortalService {
     return TemplateRegistry.getByIdOrDefault(id);
   }
 
+  /// Detects the true image format from file bytes (magic numbers)
+  /// Returns the correct file extension that matches the actual data
+  static String _getTrueImageExtension(Uint8List bytes) {
+    if (bytes.length < 4) return 'png';
+    
+    // Check magic numbers for common image formats
+    // JPEG: FF D8 FF
+    if (bytes[0] == 0xFF && bytes[1] == 0xD8) {
+      return 'jpg';
+    }
+    
+    // PNG: 89 50 4E 47
+    if (bytes[0] == 0x89 && bytes[1] == 0x50 && 
+        bytes[2] == 0x4E && bytes[3] == 0x47) {
+      return 'png';
+    }
+    
+    // GIF: 47 49 46 38
+    if (bytes[0] == 0x47 && bytes[1] == 0x49 && 
+        bytes[2] == 0x46 && bytes[3] == 0x38) {
+      return 'gif';
+    }
+    
+    // WebP: RIFF...WEBP
+    if (bytes.length >= 12 &&
+        bytes[0] == 0x52 && bytes[1] == 0x49 && 
+        bytes[2] == 0x46 && bytes[3] == 0x46 &&
+        bytes[8] == 0x57 && bytes[9] == 0x45 && 
+        bytes[10] == 0x42 && bytes[11] == 0x50) {
+      return 'webp';
+    }
+    
+    // Default to png if format cannot be determined
+    return 'png';
+  }
+
   /// Legacy method for backward compatibility
   @Deprecated('Use getTemplateById instead')
   static PortalThemePreset presetById(String? id) {
@@ -183,17 +220,15 @@ class HotspotPortalService {
       throw Exception('Failed to create portal directory: $e');
     }
 
-    // Create subdirectories with verification
+    // Create CSS subdirectory (images go in root folder, not img/ subdirectory)
     final cssDir = Directory(path.join(portalDir.path, 'css'));
-    final imagesDir = Directory(path.join(portalDir.path, 'images'));
     
     try {
       await cssDir.create(recursive: true);
-      await imagesDir.create(recursive: true);
       
-      // Verify directories were created
-      if (!await cssDir.exists() || !await imagesDir.exists()) {
-        throw Exception('Failed to create subdirectories');
+      // Verify directory was created
+      if (!await cssDir.exists()) {
+        throw Exception('Failed to create css subdirectory');
       }
     } catch (e) {
       throw Exception('Failed to create portal subdirectories: $e');
@@ -203,12 +238,16 @@ class HotspotPortalService {
     String? logoPath;
     String? backgroundPath;
     
-    if (branding.logoBytes != null && branding.logoFilename != null) {
+    if (branding.logoBytes != null && branding.logoBytes!.isNotEmpty) {
       try {
-        // Validate image bytes before writing
-        if (branding.logoBytes!.isEmpty) {
-          throw Exception('Logo bytes are empty');
-        }
+        // Detect true image format from bytes (ensures extension matches actual data)
+        final trueExt = _getTrueImageExtension(branding.logoBytes!);
+        final logoFilename = branding.logoFilename ?? 'logo.$trueExt';
+        
+        // Ensure filename extension matches the actual format
+        final finalLogoFilename = logoFilename.endsWith('.$trueExt') 
+            ? logoFilename 
+            : 'logo.$trueExt';
         
         // Verify it's a valid image by checking magic numbers
         final isValidImage = branding.logoBytes!.length >= 4 && (
@@ -232,7 +271,8 @@ class HotspotPortalService {
           throw Exception('Logo bytes do not appear to be a valid image file');
         }
         
-        final logoFile = File(path.join(imagesDir.path, branding.logoFilename!));
+        // Save image in root folder (not img/ subdirectory)
+        final logoFile = File(path.join(portalDir.path, finalLogoFilename));
         await logoFile.writeAsBytes(branding.logoBytes!, flush: true);
         
         // Verify file was written correctly
@@ -249,18 +289,23 @@ class HotspotPortalService {
           throw Exception('Logo file is empty');
         }
         
-        logoPath = 'images/${branding.logoFilename}';
+        // Use relative path (no leading slash, no img/ prefix) for HTML
+        logoPath = finalLogoFilename;
       } catch (e) {
         throw Exception('Failed to write logo file: $e');
       }
     }
     
-    if (branding.backgroundBytes != null && branding.backgroundFilename != null) {
+    if (branding.backgroundBytes != null && branding.backgroundBytes!.isNotEmpty) {
       try {
-        // Validate image bytes before writing
-        if (branding.backgroundBytes!.isEmpty) {
-          throw Exception('Background bytes are empty');
-        }
+        // Detect true image format from bytes (ensures extension matches actual data)
+        final trueExt = _getTrueImageExtension(branding.backgroundBytes!);
+        final bgFilename = branding.backgroundFilename ?? 'background.$trueExt';
+        
+        // Ensure filename extension matches the actual format
+        final finalBgFilename = bgFilename.endsWith('.$trueExt') 
+            ? bgFilename 
+            : 'background.$trueExt';
         
         // Verify it's a valid image by checking magic numbers
         final isValidImage = branding.backgroundBytes!.length >= 4 && (
@@ -284,7 +329,8 @@ class HotspotPortalService {
           throw Exception('Background bytes do not appear to be a valid image file');
         }
         
-        final bgFile = File(path.join(imagesDir.path, branding.backgroundFilename!));
+        // Save image in root folder (not img/ subdirectory)
+        final bgFile = File(path.join(portalDir.path, finalBgFilename));
         await bgFile.writeAsBytes(branding.backgroundBytes!, flush: true);
         
         // Verify file was written correctly
@@ -301,7 +347,8 @@ class HotspotPortalService {
           throw Exception('Background file is empty');
         }
         
-        backgroundPath = 'images/${branding.backgroundFilename}';
+        // Use relative path (no leading slash, no img/ prefix) for HTML
+        backgroundPath = finalBgFilename;
       } catch (e) {
         throw Exception('Failed to write background file: $e');
       }
@@ -340,6 +387,9 @@ class HotspotPortalService {
       backgroundPath: backgroundPath,
     );
     final md5Js = _md5Js();
+    final redirectHtml = _redirectHtml();
+    final rloginHtml = _rloginHtml();
+    final errorsTxt = _errorsTxt();
 
     // Validate that all generated content is not empty
     if (loginHtml.isEmpty) {
@@ -365,6 +415,15 @@ class HotspotPortalService {
     }
     if (md5Js.isEmpty) {
       throw Exception('Generated md5.js is empty');
+    }
+    if (redirectHtml.isEmpty) {
+      throw Exception('Generated redirect.html is empty');
+    }
+    if (rloginHtml.isEmpty) {
+      throw Exception('Generated rlogin.html is empty');
+    }
+    if (errorsTxt.isEmpty) {
+      throw Exception('Generated errors.txt is empty');
     }
 
     // Helper function to write text files with UTF-8 encoding and verification
@@ -436,6 +495,21 @@ class HotspotPortalService {
         'md5.js',
       );
       await _writeTextFile(
+        path.join(portalDir.path, 'redirect.html'),
+        redirectHtml,
+        'redirect.html',
+      );
+      await _writeTextFile(
+        path.join(portalDir.path, 'rlogin.html'),
+        rloginHtml,
+        'rlogin.html',
+      );
+      await _writeTextFile(
+        path.join(portalDir.path, 'errors.txt'),
+        errorsTxt,
+        'errors.txt',
+      );
+      await _writeTextFile(
         path.join(cssDir.path, 'style.css'),
         styleCss,
         'style.css',
@@ -461,6 +535,9 @@ class HotspotPortalService {
       path.join(portalDir.path, 'alogin.html'),
       path.join(portalDir.path, 'api.json'),
       path.join(portalDir.path, 'md5.js'),
+      path.join(portalDir.path, 'redirect.html'),
+      path.join(portalDir.path, 'rlogin.html'),
+      path.join(portalDir.path, 'errors.txt'),
       path.join(cssDir.path, 'style.css'),
     ];
     
@@ -502,6 +579,18 @@ class HotspotPortalService {
     
     try {
       await ftp.connect();
+      
+      // CRITICAL: Ensure binary transfer mode to prevent image corruption
+      // ASCII mode would corrupt binary files by converting line endings
+      // The ftpconnect library should default to binary for binary files,
+      // but we attempt to set it explicitly if the API supports it
+      try {
+        await ftp.setTransferType(TransferType.binary);
+      } catch (e) {
+        // If setTransferType is not available, the library should default to binary mode
+        // for binary file extensions (.png, .jpg, .gif, .webp, etc.)
+        // This is acceptable as most modern FTP libraries handle this correctly
+      }
       
       // Change to remote directory (create if needed)
       try {
@@ -558,8 +647,18 @@ class HotspotPortalService {
           await ftp.changeDirectory(remoteBasePath);
         }
         
-        // Upload file (FTPConnect.uploadFile takes a File object)
-        await ftp.uploadFile(entry);
+        // Upload file in binary mode (critical for images - prevents corruption)
+        // Ensure we're in binary mode before uploading binary files
+        try {
+          await ftp.setTransferType(TransferType.binary);
+        } catch (e) {
+          // Some FTP servers might not support explicit binary mode setting
+          // but most modern FTP clients default to binary for binary files
+        }
+        
+        // Upload file with explicit remote name to ensure correct path
+        final remoteFileName = path.basename(entry.path);
+        await ftp.uploadFile(entry, sRemoteName: remoteFileName);
       } else if (entry is Directory) {
         final relativePath = path.relative(entry.path, from: localDir.path);
         final remotePath = path.join(remoteBasePath, relativePath).replaceAll('\\', '/');
@@ -707,6 +806,10 @@ class HotspotPortalService {
     // Logic Stripping - RouterOS variables (no backslashes, RouterOS processes these)
     final ifChapStart = previewMode ? '' : r'$(if chap-id)';
     final ifChapEnd = previewMode ? '' : r'$(endif)';
+    // Build form opening tag - construct completely to avoid $ interpolation conflicts
+    final formOpenTag = previewMode
+        ? '<form name="login" action="$formAction" method="post" onsubmit="return doLogin()" id="loginForm">'
+        : '<form name="login" action="$formAction" method="post" \$(if chap-id)onsubmit="return doLogin()"\$(endif) id="loginForm">';
     final errorBlock = previewMode
         ? '<p class="info">Welcome to $title</p>'
         : r'$(if error)<p class="info alert">$(error)</p>$(endif)';
@@ -759,7 +862,7 @@ class HotspotPortalService {
         <input type="hidden" name="dst" value="" />
         <input type="hidden" name="popup" value="true" />
     </form>
-    <script>${previewMode ? _md5Js() : '/* md5.js load */'}</script>
+    ${previewMode ? '<script>${_md5Js()}</script>' : '<script src="md5.js"></script>'}
     <script>
         function doLogin() {
             document.sendin.username.value = document.login.username.value;
@@ -782,7 +885,7 @@ class HotspotPortalService {
                     <li class="tab" id="tUser" onclick="switchTab('user')">👤 User</li>
                 </ul>
             
-                <form name="login" action="$formAction" method="post"${previewMode ? ' onsubmit="return doLogin()"' : r'$(if chap-id)onSubmit="return doLogin()"$(endif)'} id="loginForm">
+                $formOpenTag
                     $errorBlock
                     <label>
                         <input name="username" id="mainInput" class="input-text" type="text" $usernameVal placeholder="PIN Code" autocomplete="off" />
@@ -844,11 +947,19 @@ class HotspotPortalService {
         : b.primaryHex.trim();
 
     // Use file path when provided (FTP upload), otherwise fall back to data URI (preview/legacy)
-    final backgroundRef = backgroundPath ?? b.backgroundDataUri;
+    String? backgroundRef = backgroundPath ?? b.backgroundDataUri;
+
+    // FIX: If we are not in preview mode (meaning we are generating the external style.css file),
+    // and we are using a relative file path (like "background.jpg"), 
+    // we must prepend "../" because the CSS file lives in the "css/" folder 
+    // but the images live in the root folder (one level up from css/).
+    if (!previewMode && backgroundRef != null && !backgroundRef.startsWith('data:')) {
+      backgroundRef = '../$backgroundRef';
+    }
 
     // For router mode, return the template CSS
     if (!previewMode) {
-      return template.generateRouterCss(
+      String routerCss = template.generateRouterCss(
         primaryHex: primaryHex,
         backgroundDataUri: backgroundRef,
         cardOpacity: b.cardOpacity,
@@ -856,6 +967,15 @@ class HotspotPortalService {
         borderStyle: b.borderStyle,
         borderRadius: b.borderRadius,
       );
+      
+      // Remove 'background-attachment: fixed' to match preview behavior
+      // Fixed attachment can cause issues on mobile devices and doesn't match preview
+      // Remove as separate property: "background-attachment: fixed;"
+      routerCss = routerCss.replaceAll(RegExp(r'\s*background-attachment:\s*fixed\s*;?'), '');
+      // Remove from shorthand: "url(...) ... fixed" at end of background value
+      routerCss = routerCss.replaceAll(RegExp(r'(\s+)fixed(\s*[;}]|\s*$)'), r'$1$2');
+      
+      return routerCss;
     }
 
     // For preview mode, return optimized CSS with overflow control
@@ -1130,31 +1250,11 @@ function hexMD5(s) {
 ''';
   }
 
-  /// Generate api.json for captive portal detection and session status
-  /// Note: MikroTik variables are processed server-side, so they remain as-is in the template
+  /// Generate api.json for captive portal detection
+  /// This is used by iOS/Android to detect if they're behind a captive portal
   static String _apiJson(PortalBranding b) {
-    // JSON values will be processed by RouterOS, so we keep MikroTik variables as-is
-    // RouterOS will replace them with actual values before serving
-    // Use \$ to escape $ in multi-line strings for MikroTik variables
-    return '''{
-  "status": "\$(if status)\$(status)\$(else)online\$(endif)",
-  "message": "\$(if error)\$(error)\$(else)Connected\$(endif)",
-  "title": "\$(if title)\$(title)\$(else)MikroTap Wi‑Fi\$(endif)",
-  "uptime": "\$(uptime)",
-  "bytes-in": "\$(bytes-in)",
-  "bytes-out": "\$(bytes-out)",
-  "bytes-in-nice": "\$(bytes-in-nice)",
-  "bytes-out-nice": "\$(bytes-out-nice)",
-  "ip": "\$(ip)",
-  "mac": "\$(mac)",
-  "username": "\$(username)",
-  "link-login": "\$(link-login)",
-  "link-login-only": "\$(link-login-only)",
-  "link-orig": "\$(link-orig)",
-  "link-orig-esc": "\$(link-orig-esc)",
-  "link-status": "\$(link-status)",
-  "link-logout": "\$(link-logout)"
-}''';
+    // Simple format matching the example - essential for captive portal detection
+    return '''{"captive": \$(if logged-in == "yes")false\$(else)true\$(endif)}''';
   }
 
   /// Generate error.html for error handling
@@ -1283,6 +1383,41 @@ function hexMD5(s) {
   </div>
 </body>
 </html>''';
+  }
+
+  /// Generate redirect.html for captive portal detection (essential for iOS/Android)
+  static String _redirectHtml() {
+    return '''<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="refresh" content="0; url=\$(link-redirect)">
+</head>
+<body>
+    <p>Redirecting...</p>
+</body>
+</html>''';
+  }
+
+  /// Generate rlogin.html for captive portal detection (essential for iOS/Android)
+  static String _rloginHtml() {
+    return '''<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="refresh" content="0; url=\$(link-redirect)">
+</head>
+<body>
+    <p>Redirecting...</p>
+</body>
+</html>''';
+  }
+
+  /// Generate errors.txt for error message mapping
+  static String _errorsTxt() {
+    return '''invalid-username = Invalid PIN or Password
+user-session-limit = Device limit reached
+invalid-password = Invalid password
+session-timeout = Session expired
+''';
   }
 
   static String _escapeHtml(String s) {
