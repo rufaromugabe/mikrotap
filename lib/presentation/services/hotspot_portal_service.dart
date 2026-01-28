@@ -812,7 +812,7 @@ class HotspotPortalService {
         : '<form name="login" action="$formAction" method="post" \$(if chap-id)onsubmit="return doLogin()"\$(endif) id="loginForm">';
     final errorBlock = previewMode
         ? '<p class="info">Welcome to $title</p>'
-        : r'$(if error)<p class="info alert">$(error)</p>$(endif)';
+        : r'$(if error)<p class="info alert">$(error)</p>$(else)<p class="info">Welcome to ' + title + r'</p>$(endif)';
 
     // CSS: inline in preview, external link for router
     final cssLink = previewMode
@@ -957,28 +957,8 @@ class HotspotPortalService {
       backgroundRef = '../$backgroundRef';
     }
 
-    // For router mode, return the template CSS
-    if (!previewMode) {
-      String routerCss = template.generateRouterCss(
-        primaryHex: primaryHex,
-        backgroundDataUri: backgroundRef,
-        cardOpacity: b.cardOpacity,
-        borderWidth: b.borderWidth,
-        borderStyle: b.borderStyle,
-        borderRadius: b.borderRadius,
-      );
-      
-      // Remove 'background-attachment: fixed' to match preview behavior
-      // Fixed attachment can cause issues on mobile devices and doesn't match preview
-      // Remove as separate property: "background-attachment: fixed;"
-      routerCss = routerCss.replaceAll(RegExp(r'\s*background-attachment:\s*fixed\s*;?'), '');
-      // Remove from shorthand: "url(...) ... fixed" at end of background value
-      routerCss = routerCss.replaceAll(RegExp(r'(\s+)fixed(\s*[;}]|\s*$)'), r'$1$2');
-      
-      return routerCss;
-    }
-
-    // For preview mode, return optimized CSS with overflow control
+    // Use preview CSS for both preview and router modes to ensure exact match
+    // The only difference is the background path (../ prefix for router CSS file location)
     return template.generatePreviewCss(
       primaryHex: primaryHex,
       backgroundDataUri: backgroundRef,
