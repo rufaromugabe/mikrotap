@@ -297,7 +297,7 @@ class _RouterHomeScreenState extends ConsumerState<RouterHomeScreen>
                   crossAxisCount: 2,
                   mainAxisSpacing: 12,
                   crossAxisSpacing: 12,
-                  childAspectRatio: 1.4,
+                  childAspectRatio: 1.1,
                   children: [
                     ProActionGridItem(
                       title: 'Print Vouchers',

@@ -270,7 +270,7 @@ class ProActionGridItem extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -287,16 +287,18 @@ class ProActionGridItem extends StatelessWidget {
                 title,
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
-                  fontSize: 15,
+                  fontSize: 14,
                 ),
                 textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 4),
               Text(
                 subtitle,
-                style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+                style: TextStyle(fontSize: 10, color: cs.onSurfaceVariant),
                 textAlign: TextAlign.center,
-                maxLines: 2,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
             ],

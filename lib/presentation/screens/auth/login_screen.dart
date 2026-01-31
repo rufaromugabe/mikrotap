@@ -30,7 +30,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               width: 300,
               height: 300,
               decoration: BoxDecoration(
-                color: cs.primary.withOpacity(0.05),
+                color: cs.primary.withValues(alpha: 0.03),
                 shape: BoxShape.circle,
               ),
             ),
@@ -42,7 +42,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               width: 200,
               height: 200,
               decoration: BoxDecoration(
-                color: cs.secondary.withOpacity(0.05),
+                color: cs.secondary.withValues(alpha: 0.03),
                 shape: BoxShape.circle,
               ),
             ),

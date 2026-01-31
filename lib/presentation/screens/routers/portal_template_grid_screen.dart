@@ -349,13 +349,6 @@ class _TemplatePreviewCardState extends State<_TemplatePreviewCard> {
                     decoration: BoxDecoration(
                       color: cs.primary,
                       borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: cs.primary.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
                     ),
                     child: const Text(
                       'ACTIVE',
