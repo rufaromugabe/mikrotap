@@ -4,7 +4,8 @@ class AppConfig {
   ///
   /// Run with:
   /// `flutter run --dart-define=FIREBASE_ENABLED=true`
-  static const bool firebaseEnabled =
-      bool.fromEnvironment('FIREBASE_ENABLED', defaultValue: false);
+  static const bool firebaseEnabled = bool.fromEnvironment(
+    'FIREBASE_ENABLED',
+    defaultValue: true,
+  );
 }
-

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/config/app_config.dart';
 import '../../providers/auth_providers.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -31,7 +30,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 child: isWide
                     ? Row(
                         children: [
-                          Expanded(child: _MarketingPanel(colorScheme: colorScheme)),
+                          Expanded(
+                            child: _MarketingPanel(colorScheme: colorScheme),
+                          ),
                           const SizedBox(width: 24),
                           const SizedBox(width: 420, child: _SignInCard()),
                         ],
@@ -80,9 +81,9 @@ class _SignInCardState extends ConsumerState<_SignInCard> {
               'MikroTap',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: colorScheme.primary,
-                  ),
+                fontWeight: FontWeight.w700,
+                color: colorScheme.primary,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
@@ -91,15 +92,10 @@ class _SignInCardState extends ConsumerState<_SignInCard> {
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 20),
-            Text(
-              'Sign in',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            Text('Sign in', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 6),
             Text(
-              AppConfig.firebaseEnabled
-                  ? 'Google Sign-In via Firebase'
-                  : 'Dev mode (Firebase not enabled yet)',
+              'Google Sign-In via Firebase',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 16),
@@ -112,14 +108,18 @@ class _SignInCardState extends ConsumerState<_SignInCard> {
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.error_outline, color: colorScheme.onErrorContainer, size: 20),
+                    Icon(
+                      Icons.error_outline,
+                      color: colorScheme.onErrorContainer,
+                      size: 20,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         _errorMessage!,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: colorScheme.onErrorContainer,
-                            ),
+                          color: colorScheme.onErrorContainer,
+                        ),
                       ),
                     ),
                   ],
@@ -141,7 +141,10 @@ class _SignInCardState extends ConsumerState<_SignInCard> {
                       } catch (e) {
                         if (mounted) {
                           setState(() {
-                            _errorMessage = e.toString().replaceFirst('Exception: ', '');
+                            _errorMessage = e.toString().replaceFirst(
+                              'Exception: ',
+                              '',
+                            );
                           });
                         }
                       } finally {
@@ -157,23 +160,9 @@ class _SignInCardState extends ConsumerState<_SignInCard> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.login),
-              label: Text(
-                AppConfig.firebaseEnabled
-                    ? 'Continue with Google'
-                    : 'Continue (dev sign-in)',
-              ),
+              label: const Text('Continue with Google'),
             ),
             const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: null,
-              icon: const Icon(Icons.alternate_email),
-              label: const Text('Email & password (coming soon)'),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Tip: when ready, run with `--dart-define=FIREBASE_ENABLED=true` after configuring Firebase.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
           ],
         ),
       ),
@@ -188,9 +177,9 @@ class _MarketingPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final titleStyle = Theme.of(context).textTheme.headlineMedium?.copyWith(
-          fontWeight: FontWeight.w800,
-        );
+    final titleStyle = Theme.of(
+      context,
+    ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800);
 
     return Container(
       decoration: BoxDecoration(
@@ -218,18 +207,18 @@ class _MarketingPanel extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             const _Bullet(text: 'Zero-touch router onboarding (guided setup)'),
-            const _Bullet(text: 'Voucher generation + QR codes + PDF/thermal print'),
+            const _Bullet(
+              text: 'Voucher generation + QR codes + PDF/thermal print',
+            ),
             const _Bullet(text: 'Portal branding with live preview (WebView)'),
             const _Bullet(text: 'RBAC: admin / operator / viewer'),
             const _Bullet(text: 'Reports: revenue, active users, bandwidth'),
             const SizedBox(height: 20),
             Text(
-              AppConfig.firebaseEnabled
-                  ? 'Firebase enabled'
-                  : 'Firebase disabled (dev mode)',
+              'Firebase enabled',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
-                  ),
+                color: colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
+              ),
             ),
           ],
         ),
@@ -261,4 +250,3 @@ class _Bullet extends StatelessWidget {
     );
   }
 }
-

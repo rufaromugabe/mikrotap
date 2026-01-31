@@ -8,8 +8,8 @@ class FirebaseAuthRepository implements AuthRepository {
   FirebaseAuthRepository({
     fb.FirebaseAuth? firebaseAuth,
     GoogleSignIn? googleSignIn,
-  })  : _auth = firebaseAuth ?? fb.FirebaseAuth.instance,
-        _googleSignIn = googleSignIn ?? GoogleSignIn.instance;
+  }) : _auth = firebaseAuth ?? fb.FirebaseAuth.instance,
+       _googleSignIn = googleSignIn ?? GoogleSignIn.instance;
 
   final fb.FirebaseAuth _auth;
   final GoogleSignIn _googleSignIn;
@@ -45,7 +45,6 @@ class FirebaseAuthRepository implements AuthRepository {
 
       // Create a new credential
       final credential = fb.GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
 
@@ -59,10 +58,6 @@ class FirebaseAuthRepository implements AuthRepository {
 
   @override
   Future<void> signOut() async {
-    await Future.wait([
-      _auth.signOut(),
-      _googleSignIn.signOut(),
-    ]);
+    await Future.wait([_auth.signOut(), _googleSignIn.signOut()]);
   }
 }
-

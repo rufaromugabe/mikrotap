@@ -1,16 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/config/app_config.dart';
 import '../../data/models/user_plan.dart';
 import '../../data/repositories/user_plan_repository.dart';
 import 'auth_providers.dart';
 import 'router_providers.dart';
 
 final userPlanRepositoryProvider = Provider<UserPlanRepository?>((ref) {
-  if (!AppConfig.firebaseEnabled) {
-    return null; // No plan system in dev mode
-  }
-  return FirebaseUserPlanRepository();
+  return null; // Plan system disabled (no Firebase)
 });
 
 final userPlanProvider = StreamProvider<UserPlan?>((ref) {
@@ -67,23 +63,26 @@ final canAddRouterProvider = Provider<bool>((ref) {
 });
 
 // Provider to get router count and limit info
-final routerLimitInfoProvider = Provider<({int current, int max, bool canAdd})>((ref) {
-  final planAsync = ref.watch(currentUserPlanProvider);
-  final routersAsync = ref.watch(routersProvider);
+final routerLimitInfoProvider = Provider<({int current, int max, bool canAdd})>(
+  (ref) {
+    final planAsync = ref.watch(currentUserPlanProvider);
+    final routersAsync = ref.watch(routersProvider);
 
-  return planAsync.when(
-    data: (plan) {
-      return routersAsync.when(
-        data: (routers) => (
-          current: routers.length,
-          max: plan.maxRouters,
-          canAdd: routers.length < plan.maxRouters && plan.isActive,
-        ),
-        loading: () => (current: 0, max: plan.maxRouters, canAdd: plan.isActive),
-        error: (_, __) => (current: 0, max: 0, canAdd: false),
-      );
-    },
-    loading: () => (current: 0, max: 0, canAdd: false),
-    error: (_, __) => (current: 0, max: 0, canAdd: false),
-  );
-});
+    return planAsync.when(
+      data: (plan) {
+        return routersAsync.when(
+          data: (routers) => (
+            current: routers.length,
+            max: plan.maxRouters,
+            canAdd: routers.length < plan.maxRouters && plan.isActive,
+          ),
+          loading: () =>
+              (current: 0, max: plan.maxRouters, canAdd: plan.isActive),
+          error: (_, __) => (current: 0, max: 0, canAdd: false),
+        );
+      },
+      loading: () => (current: 0, max: 0, canAdd: false),
+      error: (_, __) => (current: 0, max: 0, canAdd: false),
+    );
+  },
+);
