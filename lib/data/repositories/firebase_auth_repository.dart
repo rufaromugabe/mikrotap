@@ -30,25 +30,31 @@ class FirebaseAuthRepository implements AuthRepository {
 
   @override
   Future<void> signInWithGoogle() async {
-    _googleInit ??= _googleSignIn.initialize();
-    await _googleInit;
+    try {
+      // Initialize Google Sign-In (required for version 7.0.0+)
+      _googleInit ??= _googleSignIn.initialize();
+      await _googleInit;
 
-    final googleUser = await _googleSignIn.authenticate(scopeHint: const [
-      'email',
-      'profile',
-      'openid',
-    ]);
+      // Trigger the authentication flow
+      final googleUser = await _googleSignIn.authenticate(
+        scopeHint: const ['email', 'profile', 'openid'],
+      );
 
-    final googleAuth = googleUser.authentication;
-    final authz = await googleUser.authorizationClient.authorizeScopes(
-      const ['email', 'profile', 'openid'],
-    );
+      // Obtain the auth details from the request
+      final googleAuth = await googleUser.authentication;
 
-    final credential = fb.GoogleAuthProvider.credential(
-      accessToken: authz.accessToken,
-      idToken: googleAuth.idToken,
-    );
-    await _auth.signInWithCredential(credential);
+      // Create a new credential
+      final credential = fb.GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      // Sign in to Firebase with the Google credential
+      await _auth.signInWithCredential(credential);
+    } catch (e) {
+      // Re-throw to allow UI to handle the error
+      throw Exception('Google sign-in failed: $e');
+    }
   }
 
   @override

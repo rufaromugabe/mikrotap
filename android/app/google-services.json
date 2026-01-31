@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "651530704617",
+    "project_id": "mikrotaps",
+    "storage_bucket": "mikrotaps.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:651530704617:android:67c0187e77ff4b16bc4278",
+        "android_client_info": {
+          "package_name": "com.example.mikrotap"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAbGQa2YvUwEB_1k7bBCs5YSGlT9lUOQl8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

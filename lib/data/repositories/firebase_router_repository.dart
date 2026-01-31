@@ -24,24 +24,32 @@ class FirebaseRouterRepository implements RouterRepository {
 
   @override
   Future<void> upsertRouter(RouterEntry router) async {
-    final now = DateTime.now();
-    final ref = _col.doc(router.id);
-    final existing = await ref.get();
+    try {
+      final now = DateTime.now();
+      final ref = _col.doc(router.id);
+      final existing = await ref.get();
 
-    final createdAt = existing.exists ? router.createdAt : now;
-    final data = _toMap(
-      router.copyWith(
-        createdAt: createdAt,
-        updatedAt: now,
-      ),
-    );
+      final createdAt = existing.exists ? router.createdAt : now;
+      final data = _toMap(
+        router.copyWith(
+          createdAt: createdAt,
+          updatedAt: now,
+        ),
+      );
 
-    await ref.set(data, SetOptions(merge: true));
+      await ref.set(data, SetOptions(merge: true));
+    } catch (e) {
+      throw Exception('Failed to save router to Firebase: $e');
+    }
   }
 
   @override
   Future<void> deleteRouter(String id) async {
-    await _col.doc(id).delete();
+    try {
+      await _col.doc(id).delete();
+    } catch (e) {
+      throw Exception('Failed to delete router from Firebase: $e');
+    }
   }
 
   RouterEntry _fromDoc(DocumentSnapshot<Map<String, dynamic>> d) {

@@ -57,6 +57,7 @@ class _SignInCard extends ConsumerStatefulWidget {
 
 class _SignInCardState extends ConsumerState<_SignInCard> {
   bool _loading = false;
+  String? _errorMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -102,16 +103,51 @@ class _SignInCardState extends ConsumerState<_SignInCard> {
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 16),
+            if (_errorMessage != null) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: colorScheme.errorContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.error_outline, color: colorScheme.onErrorContainer, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _errorMessage!,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onErrorContainer,
+                            ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             FilledButton.icon(
               onPressed: (_loading || auth.isLoading)
                   ? null
                   : () async {
-                      setState(() => _loading = true);
+                      setState(() {
+                        _loading = true;
+                        _errorMessage = null;
+                      });
                       try {
                         final repo = ref.read(authRepositoryProvider);
                         await repo.signInWithGoogle();
+                      } catch (e) {
+                        if (mounted) {
+                          setState(() {
+                            _errorMessage = e.toString().replaceFirst('Exception: ', '');
+                          });
+                        }
                       } finally {
-                        if (mounted) setState(() => _loading = false);
+                        if (mounted) {
+                          setState(() => _loading = false);
+                        }
                       }
                     },
               icon: _loading

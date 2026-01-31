@@ -9,6 +9,7 @@ import '../../../data/models/router_entry.dart';
 import '../../../data/services/routeros_api_client.dart';
 import '../../providers/router_providers.dart';
 import '../../providers/active_router_provider.dart';
+import '../../providers/user_plan_providers.dart';
 import 'router_home_screen.dart';
 import 'router_initialization_screen.dart';
 import 'routers_screen.dart';
@@ -87,6 +88,21 @@ class _ManualRouterAddScreenState extends ConsumerState<ManualRouterAddScreen> {
       // Check if hotspot server already exists
       final hotspotRows = await client.printRows('/ip/hotspot/print');
       final hasHotspot = hotspotRows.isNotEmpty;
+
+      // Check plan limits before saving (only for new routers)
+      final routers = await ref.read(routersProvider.future);
+      final isExistingRouter = routers.any((r) => r.id == id);
+      
+      if (!isExistingRouter) {
+        final canAdd = ref.read(canAddRouterProvider);
+        if (!canAdd) {
+          final limitInfo = ref.read(routerLimitInfoProvider);
+          setState(() {
+            _status = 'Router limit reached (${limitInfo.current}/${limitInfo.max}). Please upgrade your plan.';
+          });
+          return;
+        }
+      }
 
       // Upsert router entry
       final entry = RouterEntry(

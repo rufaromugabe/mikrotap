@@ -7,6 +7,7 @@ import '../presentation/providers/auth_providers.dart';
 import '../presentation/screens/auth/login_screen.dart';
 import '../presentation/screens/auth/splash_screen.dart';
 import '../presentation/screens/settings/settings_screen.dart';
+import '../presentation/screens/settings/plan_screen.dart';
 import '../presentation/screens/routers/router_device_detail_screen.dart';
 import '../presentation/screens/routers/hotspot_setup_wizard_screen.dart';
 import '../presentation/screens/routers/router_initialization_screen.dart';
@@ -236,6 +237,10 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: SettingsScreen.routePath,
                 builder: (context, state) => const SettingsScreen(),
+              ),
+              GoRoute(
+                path: PlanScreen.routePath,
+                builder: (context, state) => const PlanScreen(),
               ),
             ],
           ),

@@ -8,6 +8,7 @@ import '../../../data/services/routeros_api_client.dart';
 import '../../providers/active_router_provider.dart';
 import '../../providers/auth_providers.dart';
 import '../routers/router_initialization_screen.dart';
+import 'plan_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -84,6 +85,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     _kv('Name', user?.displayName),
                     _kv('Email', user?.email),
                     _kv('UID', user?.uid),
+                    const SizedBox(height: 12),
+                    ListTile(
+                      leading: const Icon(Icons.workspace_premium),
+                      title: const Text('Subscription Plan'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => context.push(PlanScreen.routePath),
+                    ),
                     const SizedBox(height: 12),
                     FilledButton(
                       onPressed: () async {

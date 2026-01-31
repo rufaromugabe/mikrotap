@@ -9,6 +9,7 @@ import '../../../data/services/routeros_api_client.dart';
 import '../../providers/router_providers.dart';
 import '../../../data/models/router_entry.dart';
 import '../../providers/active_router_provider.dart';
+import '../../providers/user_plan_providers.dart';
 import 'routers_discovery_screen.dart';
 import 'router_initialization_screen.dart';
 import 'router_home_screen.dart';
@@ -90,6 +91,23 @@ class _RouterDeviceDetailScreenState extends ConsumerState<RouterDeviceDetailScr
       final id = _stableRouterId(host: host, mac: mac);
       final name = m.identity ?? m.boardName ?? (mac ?? 'MikroTik');
 
+      // Check plan limits before saving (only for new routers)
+      final routers = await ref.read(routersProvider.future);
+      final isExistingRouter = routers.any((r) => r.id == id);
+      
+      if (!isExistingRouter) {
+        final canAdd = ref.read(canAddRouterProvider);
+        if (!canAdd) {
+          final limitInfo = ref.read(routerLimitInfoProvider);
+          if (mounted) {
+            setState(() {
+              _apiStatus = 'Router limit reached (${limitInfo.current}/${limitInfo.max}). Please upgrade your plan.';
+            });
+          }
+          return;
+        }
+      }
+
       // Upsert router entry (works for both new and already-saved routers).
       final entry = RouterEntry(
         id: id,
@@ -104,7 +122,13 @@ class _RouterDeviceDetailScreenState extends ConsumerState<RouterDeviceDetailScr
         updatedAt: now,
         lastSeenAt: now,
       );
-      await ref.read(routerRepositoryProvider).upsertRouter(entry);
+      try {
+        await ref.read(routerRepositoryProvider).upsertRouter(entry);
+      } catch (e) {
+        // Log error but continue - router connection is more important than save
+        debugPrint('Failed to save router to repository: $e');
+        // Still set active session even if save failed
+      }
 
       // Check if hotspot server already exists
       final hotspotRows = await client.printRows('/ip/hotspot/print');
