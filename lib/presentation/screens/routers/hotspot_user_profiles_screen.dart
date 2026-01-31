@@ -9,6 +9,8 @@ import '../../providers/voucher_providers.dart';
 import '../../mixins/router_auth_mixin.dart';
 import '../../../data/models/hotspot_plan.dart';
 import 'router_home_screen.dart';
+import 'add_plan_screen.dart';
+import 'edit_plan_screen.dart';
 
 class HotspotUserProfilesScreen extends ConsumerStatefulWidget {
   const HotspotUserProfilesScreen({super.key});
@@ -16,10 +18,13 @@ class HotspotUserProfilesScreen extends ConsumerStatefulWidget {
   static const routePath = '/workspace/plans';
 
   @override
-  ConsumerState<HotspotUserProfilesScreen> createState() => _HotspotUserProfilesScreenState();
+  ConsumerState<HotspotUserProfilesScreen> createState() =>
+      _HotspotUserProfilesScreenState();
 }
 
-class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesScreen> with RouterAuthMixin {
+class _HotspotUserProfilesScreenState
+    extends ConsumerState<HotspotUserProfilesScreen>
+    with RouterAuthMixin {
   bool _loading = false;
   String? _status;
   List<HotspotPlan> _plans = const [];
@@ -42,7 +47,10 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
 
     final repo = ref.read(routerPlanRepoProvider);
     try {
-      await repo.client.login(username: session.username, password: session.password);
+      await repo.client.login(
+        username: session.username,
+        password: session.password,
+      );
       final plans = await repo.fetchPlans();
       plans.sort((a, b) => a.name.compareTo(b.name));
       setState(() => _plans = plans);
@@ -55,692 +63,20 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
   }
 
   Future<void> _addPlan() async {
-    final session = ref.read(activeRouterProvider);
-    if (session == null) return;
-
-    final nameCtrl = TextEditingController();
-    final priceCtrl = TextEditingController(text: '0');
-    final validityCtrl = TextEditingController(text: '1h');
-    final dataLimitCtrl = TextEditingController(text: '0');
-    final downCtrl = TextEditingController(text: '5');
-    final upCtrl = TextEditingController(text: '5');
-    final sharedCtrl = TextEditingController(text: '1');
-    TicketMode _mode = TicketMode.userPass;
-    int _userLen = 6;
-    int _passLen = 6;
-    Charset _charset = Charset.numeric;
-    String _validity = '1h';
-    TicketType _timeType = TicketType.paused;
-
-    final validityOptions = ['1h', '12h', '1d', '7d', '30d'];
-
-    if (!mounted) return;
-    bool dialogLoading = false;
-    String? dialogStatus;
-    
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            Future<void> submit() async {
-              final name = nameCtrl.text.trim();
-              if (name.isEmpty) {
-                setDialogState(() {
-                  dialogStatus = 'Plan name required.';
-                });
-                return;
-              }
-              
-              final price = double.parse(priceCtrl.text.trim());
-              final dataLimit = int.parse(dataLimitCtrl.text.trim());
-              final down = num.tryParse(downCtrl.text.trim());
-              final up = num.tryParse(upCtrl.text.trim());
-              final shared = int.parse(sharedCtrl.text.trim());
-
-              final rateLimit = (down != null && up != null && down > 0 && up > 0) ? '${down}M/${up}M' : throw ArgumentError('Rate limit required');
-
-              setDialogState(() {
-                dialogLoading = true;
-                dialogStatus = null;
-              });
-
-              final repo = ref.read(routerPlanRepoProvider);
-              try {
-                await repo.client.login(username: session.username, password: session.password);
-
-                final plan = HotspotPlan(
-                  id: '', // Will be set by router
-                  name: name,
-                  price: price,
-                  validity: _validity,
-                  dataLimitMb: dataLimit,
-                  mode: _mode,
-                  userLen: _userLen,
-                  passLen: _passLen,
-                  charset: _charset,
-                  rateLimit: rateLimit,
-                  sharedUsers: shared,
-                  timeType: _timeType,
-                );
-
-                await repo.addPlan(plan);
-                if (mounted) {
-                  Navigator.of(dialogContext).pop();
-                  await _refresh();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Plan "$name" created')),
-                  );
-                }
-              } catch (e) {
-                setDialogState(() {
-                  dialogStatus = 'Create failed: $e';
-                  dialogLoading = false;
-                });
-              } finally {
-                repo.client.close();
-              }
-            }
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              title: const Text('New voucher plan'),
-              content: SizedBox(
-                width: double.maxFinite,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                    TextField(
-                      controller: nameCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Name',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: priceCtrl,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(
-                        labelText: 'Price',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    DropdownButtonFormField<String>(
-                      value: _validity,
-                      decoration: const InputDecoration(
-                        labelText: 'Validity',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: validityOptions.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
-                      onChanged: (v) {
-                        if (v != null) {
-                          setDialogState(() {
-                            _validity = v;
-                            validityCtrl.text = v;
-                          });
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    const Text('Type of ticket duration', style: TextStyle(fontWeight: FontWeight.bold)),
-                    Row(
-                      children: [
-                        Radio<TicketType>(
-                          value: TicketType.elapsed,
-                          groupValue: _timeType,
-                          onChanged: (v) => setDialogState(() => _timeType = v!),
-                        ),
-                        const Text('Elapsed time'),
-                        const SizedBox(width: 20),
-                        Radio<TicketType>(
-                          value: TicketType.paused,
-                          groupValue: _timeType,
-                          onChanged: (v) => setDialogState(() => _timeType = v!),
-                        ),
-                        const Text('Paused time'),
-                      ],
-                    ),
-                    if (_timeType == TicketType.paused) ...[
-                      const SizedBox(height: 10),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Validity Limit (Auto-calculated)',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.blue.shade900,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              _calculateValidityLimit(_validity),
-                              style: TextStyle(color: Colors.blue.shade800),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Tickets will expire if not used within this time (-vl: tag)',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.blue.shade700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: dataLimitCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Data Limit (MB, 0 = Unlimited)',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    SegmentedButton<TicketMode>(
-                      segments: const [
-                        ButtonSegment(value: TicketMode.userPass, label: Text('User/Pass')),
-                        ButtonSegment(value: TicketMode.pin, label: Text('PIN')),
-                      ],
-                      selected: {_mode},
-                      onSelectionChanged: (Set<TicketMode> selection) {
-                        setDialogState(() {
-                          _mode = selection.first;
-                          if (_mode == TicketMode.pin) {
-                            _passLen = _userLen; // PIN mode: passLen = userLen
-                          }
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<int>(
-                            value: _userLen,
-                            decoration: const InputDecoration(
-                              labelText: 'User Length',
-                              border: OutlineInputBorder(),
-                            ),
-                            items: [4, 5, 6, 7, 8]
-                                .map((len) => DropdownMenuItem(value: len, child: Text('$len')))
-                                .toList(),
-                            onChanged: (v) {
-                              if (v != null) {
-                                setDialogState(() {
-                                  _userLen = v;
-                                  if (_mode == TicketMode.pin) {
-                                    _passLen = v;
-                                  }
-                                });
-                              }
-                            },
-                          ),
-                        ),
-                        if (_mode == TicketMode.userPass) ...[
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: DropdownButtonFormField<int>(
-                              value: _passLen,
-                              decoration: const InputDecoration(
-                                labelText: 'Pass Length',
-                                border: OutlineInputBorder(),
-                              ),
-                              items: [4, 5, 6, 7, 8]
-                                  .map((len) => DropdownMenuItem(value: len, child: Text('$len')))
-                                  .toList(),
-                              onChanged: (v) {
-                                if (v != null) {
-                                  setDialogState(() => _passLen = v);
-                                }
-                              },
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    DropdownButtonFormField<Charset>(
-                      value: _charset,
-                      decoration: const InputDecoration(
-                        labelText: 'Charset',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: const [
-                        DropdownMenuItem(value: Charset.numeric, child: Text('Numeric')),
-                        DropdownMenuItem(value: Charset.alphanumeric, child: Text('Alphanumeric')),
-                      ],
-                      onChanged: (v) {
-                        if (v != null) {
-                          setDialogState(() => _charset = v);
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: downCtrl,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'Down (Mbps)',
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: TextField(
-                            controller: upCtrl,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'Up (Mbps)',
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: sharedCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Shared Users',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    if (dialogStatus != null) ...[
-                      const SizedBox(height: 10),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: dialogStatus!.startsWith('Create failed')
-                              ? Colors.red.withOpacity(0.1)
-                              : Colors.orange.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          dialogStatus!,
-                          style: TextStyle(
-                            color: dialogStatus!.startsWith('Create failed')
-                                ? Colors.red.shade900
-                                : Colors.orange.shade900,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-                TextButton(
-                  onPressed: dialogLoading ? null : () => Navigator.of(dialogContext).pop(),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: dialogLoading ? null : submit,
-                  child: dialogLoading
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Create'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
+    final result = await context.push(AddPlanScreen.routePath);
+    if (result == true && mounted) {
+      await _refresh();
+    }
   }
 
   Future<void> _editPlan(HotspotPlan plan) async {
-    final session = ref.read(activeRouterProvider);
-    if (session == null) return;
-
-    final nameCtrl = TextEditingController(text: plan.name);
-    final priceCtrl = TextEditingController(text: '${plan.price}');
-    final dataLimitCtrl = TextEditingController(text: '${plan.dataLimitMb}');
-    final downCtrl = TextEditingController();
-    final upCtrl = TextEditingController();
-    final sharedCtrl = TextEditingController(text: '${plan.sharedUsers}');
-
-    // Parse rate-limit "5M/5M" -> Mbps
-    num? parseM(String s) {
-      final m = RegExp(r'([\d.]+)\s*M', caseSensitive: false).firstMatch(s);
-      if (m == null) return null;
-      return num.tryParse(m.group(1)!);
-    }
-
-    final rate = plan.rateLimit;
-    final parts = rate.split('/');
-    if (parts.isNotEmpty) {
-      final down = parseM(parts[0]);
-      if (down != null) downCtrl.text = down.toString();
-    }
-    if (parts.length > 1) {
-      final up = parseM(parts[1]);
-      if (up != null) upCtrl.text = up.toString();
-    }
-
-    TicketMode _mode = plan.mode;
-    int _userLen = plan.userLen;
-    int _passLen = plan.passLen;
-    Charset _charset = plan.charset;
-    String _validity = plan.validity;
-    TicketType _timeType = plan.timeType;
-
-    final validityOptions = ['1h', '12h', '1d', '7d', '30d'];
-
-    Future<void> submit() async {
-      final name = nameCtrl.text.trim();
-      if (name.isEmpty) {
-        setState(() => _status = 'Plan name required.');
-        return;
-      }
-      
-      final price = double.parse(priceCtrl.text.trim());
-      final dataLimit = int.parse(dataLimitCtrl.text.trim());
-      final down = num.tryParse(downCtrl.text.trim());
-      final up = num.tryParse(upCtrl.text.trim());
-      final shared = int.parse(sharedCtrl.text.trim());
-
-      final rateLimit = (down != null && up != null && down > 0 && up > 0) ? '${down}M/${up}M' : throw ArgumentError('Rate limit required');
-
-      setState(() {
-        _loading = true;
-        _status = null;
-      });
-
-      final repo = ref.read(routerPlanRepoProvider);
-      try {
-        await repo.client.login(username: session.username, password: session.password);
-
-        final updatedPlan = plan.copyWith(
-          name: name,
-          price: price,
-          validity: _validity,
-          dataLimitMb: dataLimit,
-          mode: _mode,
-          userLen: _userLen,
-          passLen: _passLen,
-          charset: _charset,
-          rateLimit: rateLimit,
-          sharedUsers: shared,
-          timeType: _timeType,
-        );
-
-        await repo.updatePlan(updatedPlan);
-        if (mounted) Navigator.of(context).pop();
-        await _refresh();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Plan "$name" updated')),
-          );
-        }
-      } catch (e) {
-        setState(() => _status = 'Update failed: $e');
-      } finally {
-        repo.client.close();
-        if (mounted) setState(() => _loading = false);
-      }
-    }
-
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text('Edit voucher plan'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: nameCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Name',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: priceCtrl,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(
-                        labelText: 'Price',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    DropdownButtonFormField<String>(
-                      value: _validity,
-                      decoration: const InputDecoration(
-                        labelText: 'Validity',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: validityOptions.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
-                      onChanged: (v) {
-                        if (v != null) {
-                          setDialogState(() => _validity = v);
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    const Text('Type of ticket duration', style: TextStyle(fontWeight: FontWeight.bold)),
-                    Row(
-                      children: [
-                        Radio<TicketType>(
-                          value: TicketType.elapsed,
-                          groupValue: _timeType,
-                          onChanged: (v) => setDialogState(() => _timeType = v!),
-                        ),
-                        const Text('Elapsed time'),
-                        const SizedBox(width: 20),
-                        Radio<TicketType>(
-                          value: TicketType.paused,
-                          groupValue: _timeType,
-                          onChanged: (v) => setDialogState(() => _timeType = v!),
-                        ),
-                        const Text('Paused time'),
-                      ],
-                    ),
-                    if (_timeType == TicketType.paused) ...[
-                      const SizedBox(height: 10),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Validity Limit (Auto-calculated)',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.blue.shade900,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              _calculateValidityLimit(_validity),
-                              style: TextStyle(color: Colors.blue.shade800),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Tickets will expire if not used within this time (-vl: tag)',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.blue.shade700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: dataLimitCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Data Limit (MB, 0 = Unlimited)',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    SegmentedButton<TicketMode>(
-                      segments: const [
-                        ButtonSegment(value: TicketMode.userPass, label: Text('User/Pass')),
-                        ButtonSegment(value: TicketMode.pin, label: Text('PIN')),
-                      ],
-                      selected: {_mode},
-                      onSelectionChanged: (Set<TicketMode> selection) {
-                        setDialogState(() {
-                          _mode = selection.first;
-                          if (_mode == TicketMode.pin) {
-                            _passLen = _userLen;
-                          }
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<int>(
-                            value: _userLen,
-                            decoration: const InputDecoration(
-                              labelText: 'User Length',
-                              border: OutlineInputBorder(),
-                            ),
-                            items: [4, 5, 6, 7, 8]
-                                .map((len) => DropdownMenuItem(value: len, child: Text('$len')))
-                                .toList(),
-                            onChanged: (v) {
-                              if (v != null) {
-                                setDialogState(() {
-                                  _userLen = v;
-                                  if (_mode == TicketMode.pin) {
-                                    _passLen = v;
-                                  }
-                                });
-                              }
-                            },
-                          ),
-                        ),
-                        if (_mode == TicketMode.userPass) ...[
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: DropdownButtonFormField<int>(
-                              value: _passLen,
-                              decoration: const InputDecoration(
-                                labelText: 'Pass Length',
-                                border: OutlineInputBorder(),
-                              ),
-                              items: [4, 5, 6, 7, 8]
-                                  .map((len) => DropdownMenuItem(value: len, child: Text('$len')))
-                                  .toList(),
-                              onChanged: (v) {
-                                if (v != null) {
-                                  setDialogState(() => _passLen = v);
-                                }
-                              },
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    DropdownButtonFormField<Charset>(
-                      value: _charset,
-                      decoration: const InputDecoration(
-                        labelText: 'Charset',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: const [
-                        DropdownMenuItem(value: Charset.numeric, child: Text('Numeric')),
-                        DropdownMenuItem(value: Charset.alphanumeric, child: Text('Alphanumeric')),
-                      ],
-                      onChanged: (v) {
-                        if (v != null) {
-                          setDialogState(() => _charset = v);
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: downCtrl,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'Down (Mbps)',
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: TextField(
-                            controller: upCtrl,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'Up (Mbps)',
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: sharedCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Shared Users',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: _loading ? null : () => Navigator.of(context).pop(),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: _loading ? null : submit,
-                  child: const Text('Save'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+    final result = await context.push(
+      EditPlanScreen.routePath,
+      extra: EditPlanArgs(plan: plan),
     );
+    if (result == true && mounted) {
+      await _refresh();
+    }
   }
 
   Future<void> _deletePlan(HotspotPlan plan) async {
@@ -754,13 +90,16 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
 
     final repo = ref.read(routerPlanRepoProvider);
     try {
-      await repo.client.login(username: session.username, password: session.password);
+      await repo.client.login(
+        username: session.username,
+        password: session.password,
+      );
       await repo.deletePlan(plan.id);
       await _refresh();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Deleted "${plan.name}"')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Deleted "${plan.name}"')));
       }
     } catch (e) {
       setState(() => _status = 'Delete failed: $e');
@@ -777,7 +116,9 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
     if (session == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Plans')),
-        body: const Center(child: Text('No active router. Connect to a router first.')),
+        body: const Center(
+          child: Text('No active router. Connect to a router first.'),
+        ),
       );
     }
 
@@ -836,7 +177,10 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
                 final subtitle = [
                   'Price: \$${plan.price}',
                   'Validity: ${plan.validity}',
-                  if (plan.dataLimitMb > 0) 'Data: ${plan.dataLimitMb}MB' else 'Data: Unlimited',
+                  if (plan.dataLimitMb > 0)
+                    'Data: ${plan.dataLimitMb}MB'
+                  else
+                    'Data: Unlimited',
                   'Speed: ${plan.rateLimit}',
                 ].join(' • ');
 
@@ -848,12 +192,14 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
                         const SizedBox(width: 8),
                         Chip(
                           label: Text(
-                            plan.timeType == TicketType.elapsed ? 'ELAPSED' : 'PAUSED',
+                            plan.timeType == TicketType.elapsed
+                                ? 'ELAPSED'
+                                : 'PAUSED',
                             style: const TextStyle(fontSize: 10),
                           ),
                           visualDensity: VisualDensity.compact,
-                          backgroundColor: plan.timeType == TicketType.elapsed 
-                              ? Colors.orange.withOpacity(0.2) 
+                          backgroundColor: plan.timeType == TicketType.elapsed
+                              ? Colors.orange.withOpacity(0.2)
                               : Colors.blue.withOpacity(0.2),
                         ),
                       ],
@@ -876,22 +222,5 @@ class _HotspotUserProfilesScreenState extends ConsumerState<HotspotUserProfilesS
         ),
       ),
     );
-  }
-
-  /// Calculates validity limit display string for paused tickets
-  String _calculateValidityLimit(String validity) {
-    if (validity.endsWith('d')) {
-      final d = int.parse(validity.replaceAll('d', ''));
-      return '${d + 1} days (calculated from validity + 1 day)';
-    } else if (validity.endsWith('h')) {
-      final h = int.parse(validity.replaceAll('h', ''));
-      final days = (h / 24).ceil();
-      return '${days > 0 ? days : 1} days (calculated from ${h}h)';
-    } else if (validity.endsWith('m')) {
-      final m = int.parse(validity.replaceAll('m', ''));
-      final days = (m / 1440).ceil();
-      return '${days > 0 ? days : 1} days (calculated from ${m}m)';
-    }
-    return '30 days (default)';
   }
 }

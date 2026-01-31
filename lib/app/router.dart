@@ -17,6 +17,8 @@ import '../presentation/screens/routers/saved_router_connect_screen.dart';
 import '../presentation/screens/routers/manual_router_add_screen.dart';
 import '../presentation/screens/routers/router_home_screen.dart';
 import '../presentation/screens/routers/hotspot_user_profiles_screen.dart';
+import '../presentation/screens/routers/add_plan_screen.dart';
+import '../presentation/screens/routers/edit_plan_screen.dart';
 import '../presentation/screens/routers/portal_template_grid_screen.dart';
 import '../presentation/screens/routers/portal_template_editor_screen.dart';
 import '../presentation/screens/vouchers/generate_vouchers_screen.dart';
@@ -63,6 +65,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isWorkspace =
           loc.startsWith(RouterHomeScreen.routePath) ||
           loc.startsWith(HotspotUserProfilesScreen.routePath) ||
+          loc.startsWith(AddPlanScreen.routePath) ||
+          loc.startsWith(EditPlanScreen.routePath) ||
           loc.startsWith(VouchersScreen.routePath) ||
           loc.startsWith(GenerateVouchersScreen.routePath) ||
           loc.startsWith(PrintVouchersScreen.routePath) ||
@@ -148,6 +152,24 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: HotspotUserProfilesScreen.routePath,
                 builder: (context, state) => const HotspotUserProfilesScreen(),
+              ),
+              GoRoute(
+                path: AddPlanScreen.routePath,
+                builder: (context, state) => const AddPlanScreen(),
+              ),
+              GoRoute(
+                path: EditPlanScreen.routePath,
+                builder: (context, state) {
+                  final extra = state.extra;
+                  if (extra is! EditPlanArgs) {
+                    return const Scaffold(
+                      body: SafeArea(
+                        child: Center(child: Text('Missing plan data.')),
+                      ),
+                    );
+                  }
+                  return EditPlanScreen(plan: extra.plan);
+                },
               ),
 
               GoRoute(
