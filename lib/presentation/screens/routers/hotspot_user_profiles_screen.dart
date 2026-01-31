@@ -11,6 +11,7 @@ import '../../../data/models/hotspot_plan.dart';
 import 'router_home_screen.dart';
 import 'add_plan_screen.dart';
 import 'edit_plan_screen.dart';
+import '../../widgets/notification_dialog.dart';
 
 class HotspotUserProfilesScreen extends ConsumerStatefulWidget {
   const HotspotUserProfilesScreen({super.key});
@@ -97,12 +98,23 @@ class _HotspotUserProfilesScreenState
       await repo.deletePlan(plan.id);
       await _refresh();
       if (mounted) {
-        ScaffoldMessenger.of(
+        NotificationToast.show(
           context,
-        ).showSnackBar(SnackBar(content: Text('Deleted "${plan.name}"')));
+          NotificationData(
+            title: 'Deleted',
+            message: 'Plan "${plan.name}" deleted successfully',
+            type: NotificationType.success,
+          ),
+        );
       }
     } catch (e) {
-      setState(() => _status = 'Delete failed: $e');
+      if (mounted) {
+        await NotificationDialog.error(
+          context,
+          title: 'Failed to Delete Plan',
+          message: e.toString(),
+        );
+      }
     } finally {
       repo.client.close();
       if (mounted) setState(() => _loading = false);

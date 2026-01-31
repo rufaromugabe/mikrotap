@@ -8,6 +8,7 @@ import '../../providers/active_router_provider.dart';
 import '../../providers/voucher_providers.dart';
 import '../../../data/models/hotspot_plan.dart';
 import '../../widgets/thematic_widgets.dart';
+import '../../widgets/notification_dialog.dart';
 
 class EditPlanArgs {
   final HotspotPlan plan;
@@ -152,15 +153,24 @@ class _EditPlanScreenState extends ConsumerState<EditPlanScreen> {
       await repo.updatePlan(updatedPlan);
       if (mounted) {
         context.pop(true); // Return true to indicate success
-        ScaffoldMessenger.of(
+        NotificationToast.show(
           context,
-        ).showSnackBar(SnackBar(content: Text('Plan "$name" updated')));
+          NotificationData(
+            title: 'Success',
+            message: 'Plan "$name" updated successfully',
+            type: NotificationType.success,
+          ),
+        );
       }
     } catch (e) {
-      setState(() {
-        _status = 'Update failed: $e';
-        _loading = false;
-      });
+      if (mounted) {
+        await NotificationDialog.error(
+          context,
+          title: 'Failed to Update Plan',
+          message: e.toString(),
+        );
+      }
+      setState(() => _loading = false);
     } finally {
       repo.client.close();
     }

@@ -9,10 +9,14 @@ class MikroTapTheme {
   static const _tertiary = Color(0xFF0EA5E9); // Sky 500
 
   static const _surfaceLight = Color(0xFFFFFFFF);
-  static const _backgroundLight = Color(0xFFFAFAFA); // Neutral 50
+  static const _backgroundLight = Color(
+    0xFFF9FAFF,
+  ); // Ethereal White - Soft Violet/Indigo hint
 
-  static const _surfaceDark = Color(0xFF18181B); // Zinc 900
-  static const _backgroundDark = Color(0xFF09090B); // Zinc 950
+  static const _surfaceDark = Color(0xFF0F0E17); // Deep Midnight Surface
+  static const _backgroundDark = Color(
+    0xFF050508,
+  ); // Obsidian Cosmos - Deepest Neutral with a hint of Ink
 
   static TextTheme _buildTextTheme(TextTheme base) {
     return GoogleFonts.interTextTheme(base);
@@ -32,28 +36,28 @@ class MikroTapTheme {
     ),
     scaffoldBackgroundColor: _backgroundLight,
     textTheme: _buildTextTheme(ThemeData.light().textTheme),
-    appBarTheme: const AppBarTheme(
+    appBarTheme: AppBarTheme(
       centerTitle: false,
-      backgroundColor: _backgroundLight,
+      backgroundColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
-      titleTextStyle: TextStyle(
+      titleTextStyle: const TextStyle(
         color: Colors.black87,
         fontSize: 20,
         fontWeight: FontWeight.bold,
-        fontFamily:
-            'Inter', // Fallback if GoogleFonts fails to load immediately
+        fontFamily: 'Inter',
       ),
-      iconTheme: IconThemeData(color: Colors.black87),
+      iconTheme: const IconThemeData(color: Colors.black87),
     ),
     cardTheme: CardThemeData(
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: Colors.grey.shade200, width: 1),
+        side: const BorderSide(color: Color(0xFFE5E7EB), width: 1.5),
       ),
       color: _surfaceLight,
       margin: EdgeInsets.zero,
+      shadowColor: const Color(0xFF0F0E17).withValues(alpha: 0.04),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
@@ -90,13 +94,20 @@ class MikroTapTheme {
     ),
     navigationBarTheme: NavigationBarThemeData(
       backgroundColor: _surfaceLight,
-      indicatorColor: _primary.withOpacity(0.1),
-      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+      elevation: 0,
+      indicatorColor: _primary.withValues(alpha: 0.1),
+      labelTextStyle: WidgetStateProperty.all(
+        const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+          color: Colors.black87,
+        ),
+      ),
       iconTheme: WidgetStateProperty.resolveWith((states) {
         if (states.contains(WidgetState.selected)) {
           return const IconThemeData(color: _primary);
         }
-        return IconThemeData(color: Colors.grey.shade600);
+        return const IconThemeData(color: Colors.black45);
       }),
     ),
   );
@@ -117,13 +128,14 @@ class MikroTapTheme {
     textTheme: _buildTextTheme(ThemeData.dark().textTheme),
     appBarTheme: const AppBarTheme(
       centerTitle: false,
-      backgroundColor: _backgroundDark,
+      backgroundColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       titleTextStyle: TextStyle(
         color: Colors.white,
         fontSize: 20,
         fontWeight: FontWeight.bold,
+        fontFamily: 'Inter',
       ),
       iconTheme: IconThemeData(color: Colors.white),
     ),
@@ -131,10 +143,11 @@ class MikroTapTheme {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: Colors.white.withOpacity(0.1), width: 1),
+        side: const BorderSide(color: Color(0xFF1F1E2C), width: 1.5),
       ),
       color: _surfaceDark,
       margin: EdgeInsets.zero,
+      shadowColor: Colors.black.withValues(alpha: 0.5),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
@@ -171,13 +184,20 @@ class MikroTapTheme {
     ),
     navigationBarTheme: NavigationBarThemeData(
       backgroundColor: _surfaceDark,
-      indicatorColor: _primary.withOpacity(0.2),
-      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+      elevation: 0,
+      indicatorColor: _primary.withValues(alpha: 0.15),
+      labelTextStyle: WidgetStateProperty.all(
+        TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+          color: Colors.white.withValues(alpha: 0.7),
+        ),
+      ),
       iconTheme: WidgetStateProperty.resolveWith((states) {
         if (states.contains(WidgetState.selected)) {
           return const IconThemeData(color: _primary);
         }
-        return IconThemeData(color: Colors.grey.shade400);
+        return IconThemeData(color: Colors.white.withValues(alpha: 0.5));
       }),
     ),
   );

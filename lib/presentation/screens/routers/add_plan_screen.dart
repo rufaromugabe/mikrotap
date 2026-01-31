@@ -8,6 +8,7 @@ import '../../providers/active_router_provider.dart';
 import '../../providers/voucher_providers.dart';
 import '../../../data/models/hotspot_plan.dart';
 import '../../widgets/thematic_widgets.dart';
+import '../../widgets/notification_dialog.dart';
 
 class AddPlanScreen extends ConsumerStatefulWidget {
   const AddPlanScreen({super.key});
@@ -109,15 +110,24 @@ class _AddPlanScreenState extends ConsumerState<AddPlanScreen> {
       await repo.addPlan(plan);
       if (mounted) {
         context.pop(true); // Return true to indicate success
-        ScaffoldMessenger.of(
+        NotificationToast.show(
           context,
-        ).showSnackBar(SnackBar(content: Text('Plan "$name" created')));
+          NotificationData(
+            title: 'Success',
+            message: 'Plan "$name" created successfully',
+            type: NotificationType.success,
+          ),
+        );
       }
     } catch (e) {
-      setState(() {
-        _status = 'Create failed: $e';
-        _loading = false;
-      });
+      if (mounted) {
+        NotificationDialog.error(
+          context,
+          title: 'Failed to Create Plan',
+          message: e.toString(),
+        );
+      }
+      setState(() => _loading = false);
     } finally {
       repo.client.close();
     }

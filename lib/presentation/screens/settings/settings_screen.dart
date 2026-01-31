@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../data/services/routeros_api_client.dart';
 import '../../providers/active_router_provider.dart';
 import '../../providers/auth_providers.dart';
+import '../../providers/theme_provider.dart';
 import '../routers/router_initialization_screen.dart';
 import 'plan_screen.dart';
 
@@ -133,6 +134,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
             const SizedBox(height: 24),
 
+            // Appearance Section
+            const ProHeader(title: 'Appearance'),
+            _ThemeSwitcher(),
+            const SizedBox(height: 24),
+
             // Router Section
             ProHeader(title: 'Router Configuration'),
             Card(
@@ -214,6 +220,129 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 24),
             Center(
               child: Text('Version 1.0.0', style: TextStyle(color: cs.outline)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ThemeSwitcher extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final currentTheme = ref.watch(themeProvider);
+    final cs = Theme.of(context).colorScheme;
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: cs.outlineVariant.withOpacity(0.5)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Theme Mode',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: cs.onSurface,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _ThemeOption(
+                    icon: Icons.light_mode_rounded,
+                    label: 'Light',
+                    isSelected: currentTheme == AppThemeMode.light,
+                    onTap: () => ref
+                        .read(themeProvider.notifier)
+                        .setTheme(AppThemeMode.light),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _ThemeOption(
+                    icon: Icons.dark_mode_rounded,
+                    label: 'Dark',
+                    isSelected: currentTheme == AppThemeMode.dark,
+                    onTap: () => ref
+                        .read(themeProvider.notifier)
+                        .setTheme(AppThemeMode.dark),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _ThemeOption(
+                    icon: Icons.brightness_auto_rounded,
+                    label: 'System',
+                    isSelected: currentTheme == AppThemeMode.system,
+                    onTap: () => ref
+                        .read(themeProvider.notifier)
+                        .setTheme(AppThemeMode.system),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ThemeOption extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _ThemeOption({
+    required this.icon,
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? cs.primary.withOpacity(0.1) : cs.surface,
+          border: Border.all(
+            color: isSelected ? cs.primary : cs.outlineVariant.withOpacity(0.3),
+            width: isSelected ? 2 : 1,
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              color: isSelected ? cs.primary : cs.onSurfaceVariant,
+              size: 28,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                color: isSelected ? cs.primary : cs.onSurfaceVariant,
+              ),
             ),
           ],
         ),
