@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/auth_providers.dart';
 import '../../widgets/thematic_widgets.dart';
+import '../../widgets/ui_components.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -48,37 +49,42 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ),
           ),
           SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final isWide = constraints.maxWidth >= 900;
+            child: AnimatedPage(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final isWide = constraints.maxWidth >= 900;
 
-                final content = ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1100),
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: isWide
-                        ? Row(
-                            children: [
-                              Expanded(child: _MarketingPanel(cs: cs)),
-                              const SizedBox(width: 48),
-                              const SizedBox(width: 400, child: _SignInCard()),
-                            ],
-                          )
-                        : SingleChildScrollView(
-                            child: Column(
+                  final content = ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1100),
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: isWide
+                          ? Row(
                               children: [
-                                const SizedBox(height: 48),
-                                _LoginHeader(cs: cs),
-                                const SizedBox(height: 48),
-                                const _SignInCard(),
+                                Expanded(child: _MarketingPanel(cs: cs)),
+                                const SizedBox(width: 48),
+                                const SizedBox(
+                                  width: 400,
+                                  child: _SignInCard(),
+                                ),
                               ],
+                            )
+                          : SingleChildScrollView(
+                              child: Column(
+                                children: [
+                                  const SizedBox(height: 48),
+                                  _LoginHeader(cs: cs),
+                                  const SizedBox(height: 48),
+                                  const _SignInCard(),
+                                ],
+                              ),
                             ),
-                          ),
-                  ),
-                );
+                    ),
+                  );
 
-                return Center(child: content);
-              },
+                  return Center(child: content);
+                },
+              ),
             ),
           ),
         ],
@@ -154,29 +160,10 @@ class _SignInCardState extends ConsumerState<_SignInCard> {
         ),
         const SizedBox(height: 32),
         if (_errorMessage != null) ...[
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: cs.errorContainer.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: cs.error.withOpacity(0.2)),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.warning_amber_rounded, color: cs.error, size: 20),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _errorMessage!,
-                    style: TextStyle(
-                      color: cs.error,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          InfoBanner(
+            message: _errorMessage!,
+            type: InfoBannerType.error,
+            onDismiss: () => setState(() => _errorMessage = null),
           ),
           const SizedBox(height: 24),
         ],

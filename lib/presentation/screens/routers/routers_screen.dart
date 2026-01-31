@@ -7,6 +7,7 @@ import 'routers_discovery_screen.dart';
 import 'saved_router_connect_screen.dart';
 import 'manual_router_add_screen.dart';
 import '../../widgets/thematic_widgets.dart';
+import '../../widgets/ui_components.dart';
 
 class RoutersScreen extends ConsumerWidget {
   const RoutersScreen({super.key});
@@ -37,128 +38,85 @@ class RoutersScreen extends ConsumerWidget {
         label: const Text('Add Manually'),
       ),
       body: SafeArea(
-        child: routers.when(
-          data: (items) {
-            if (items.isEmpty) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: ProCard(
-                    padding: const EdgeInsets.all(32),
+        child: AnimatedPage(
+          child: routers.when(
+            data: (items) {
+              if (items.isEmpty) {
+                return EmptyState(
+                  icon: Icons.router_outlined,
+                  title: 'No Routers Found',
+                  message:
+                      'Connect your MikroTik to the network and use Discover to find it automatically.',
+                  action: () => context.go(RoutersDiscoveryScreen.routePath),
+                  actionLabel: 'Start Discovery',
+                );
+              }
+
+              return ListView.separated(
+                padding: const EdgeInsets.all(16),
+                itemCount: items.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                itemBuilder: (context, i) {
+                  final r = items[i];
+                  final subtitle = [
+                    if (r.host.isNotEmpty) r.host,
+                    if (r.macAddress != null) r.macAddress,
+                  ].join(' • ');
+
+                  return ProCard(
+                    padding: EdgeInsets.zero,
                     children: [
-                      Icon(
-                        Icons.router_outlined,
-                        size: 64,
-                        color: cs.primary.withValues(alpha: 0.2),
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        'No Routers Found',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: cs.onSurface,
+                      ListTile(
+                        contentPadding: const EdgeInsets.all(16),
+                        leading: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: cs.primary.withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(Icons.router, color: cs.primary),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Connect your MikroTik to the network and use Discover to find it automatically.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: cs.onSurfaceVariant),
-                      ),
-                      const SizedBox(height: 32),
-                      FilledButton.icon(
-                        onPressed: () =>
-                            context.go(RoutersDiscoveryScreen.routePath),
-                        icon: const Icon(Icons.radar),
-                        label: const Text('Start Discovery'),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }
-
-            return ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: items.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
-              itemBuilder: (context, i) {
-                final r = items[i];
-                final subtitle = [
-                  if (r.host.isNotEmpty) r.host,
-                  if (r.macAddress != null) r.macAddress,
-                ].join(' • ');
-
-                return ProCard(
-                  padding: EdgeInsets.zero,
-                  children: [
-                    ListTile(
-                      contentPadding: const EdgeInsets.all(16),
-                      leading: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: cs.primary.withValues(alpha: 0.1),
-                          shape: BoxShape.circle,
+                        title: Text(
+                          r.name,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                          ),
                         ),
-                        child: Icon(Icons.router, color: cs.primary),
-                      ),
-                      title: Text(
-                        r.name,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 16,
+                        subtitle: Text(
+                          subtitle.isEmpty ? 'Manually added' : subtitle,
+                          style: TextStyle(
+                            color: cs.onSurfaceVariant,
+                            fontSize: 12,
+                          ),
                         ),
-                      ),
-                      subtitle: Text(
-                        subtitle.isEmpty ? 'Manually added' : subtitle,
-                        style: TextStyle(
-                          color: cs.onSurfaceVariant,
-                          fontSize: 12,
-                        ),
-                      ),
-                      onTap: () {
-                        context.push(
-                          SavedRouterConnectScreen.routePath,
-                          extra: r,
-                        );
-                      },
-                      trailing: IconButton(
-                        icon: const Icon(Icons.chevron_right_rounded),
-                        onPressed: () {
+                        onTap: () {
                           context.push(
                             SavedRouterConnectScreen.routePath,
                             extra: r,
                           );
                         },
+                        trailing: IconButton(
+                          icon: const Icon(Icons.chevron_right_rounded),
+                          onPressed: () {
+                            context.push(
+                              SavedRouterConnectScreen.routePath,
+                              extra: r,
+                            );
+                          },
+                        ),
                       ),
-                    ),
-                  ],
-                );
-              },
-            );
-          },
-          error: (e, _) => Center(
-            child: ProCard(
-              children: [
-                Icon(Icons.error_outline, color: cs.error, size: 48),
-                const SizedBox(height: 16),
-                Text(
-                  'Failed to load routers',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: cs.error,
-                  ),
-                ),
-                Text(
-                  '$e',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 12, color: cs.error),
-                ),
-              ],
+                    ],
+                  );
+                },
+              );
+            },
+            error: (e, _) => ErrorState(
+              message: e.toString(),
+              onRetry: () => ref.invalidate(routersProvider),
             ),
+            loading: () => const LoadingState(message: 'Loading routers...'),
           ),
-          loading: () => const Center(child: CircularProgressIndicator()),
         ),
       ),
     );

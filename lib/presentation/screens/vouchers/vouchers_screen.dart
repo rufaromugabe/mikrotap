@@ -9,6 +9,7 @@ import '../routers/router_home_screen.dart';
 import 'generate_vouchers_screen.dart';
 import 'print_vouchers_screen.dart';
 import '../../widgets/thematic_widgets.dart';
+import '../../widgets/ui_components.dart';
 
 class VouchersArgs {
   const VouchersArgs({
@@ -162,19 +163,21 @@ class _VouchersBodyState extends ConsumerState<_VouchersBody> {
               child: vouchers.when(
                 data: (items) {
                   if (items.isEmpty) {
-                    return Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.airplane_ticket_outlined,
-                            size: 64,
-                            color: cs.secondary.withValues(alpha: 0.5),
-                          ),
-                          const SizedBox(height: 16),
-                          const Text('No vouchers found.'),
-                        ],
+                    return EmptyState(
+                      icon: Icons.airplane_ticket_outlined,
+                      title: 'No Vouchers Found',
+                      message:
+                          'Generate vouchers to provide internet access to your users.',
+                      action: () => context.push(
+                        GenerateVouchersScreen.routePath,
+                        extra: GenerateVouchersArgs(
+                          routerId: args.routerId,
+                          host: args.host,
+                          username: args.username,
+                          password: args.password,
+                        ),
                       ),
+                      actionLabel: 'Generate Vouchers',
                     );
                   }
 
@@ -191,6 +194,14 @@ class _VouchersBodyState extends ConsumerState<_VouchersBody> {
                         return !isUsed;
                     }
                   }).toList();
+
+                  if (filtered.isEmpty) {
+                    return EmptyState(
+                      icon: Icons.filter_list_off,
+                      title: 'No Matching Vouchers',
+                      message: 'Try changing the filter to see other vouchers.',
+                    );
+                  }
 
                   return ListView.separated(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -272,8 +283,12 @@ class _VouchersBodyState extends ConsumerState<_VouchersBody> {
                     },
                   );
                 },
-                error: (e, _) => Center(child: Text('Error: $e')),
-                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, _) => ErrorState(
+                  message: e.toString(),
+                  onRetry: () => ref.invalidate(vouchersProvider),
+                ),
+                loading: () =>
+                    const LoadingState(message: 'Loading vouchers...'),
               ),
             ),
           ],

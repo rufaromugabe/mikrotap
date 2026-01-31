@@ -21,6 +21,7 @@ import 'routers_screen.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../widgets/thematic_widgets.dart';
+import '../../widgets/ui_components.dart';
 
 class RouterHomeScreen extends ConsumerStatefulWidget {
   const RouterHomeScreen({super.key});
@@ -205,155 +206,157 @@ class _RouterHomeScreenState extends ConsumerState<RouterHomeScreen>
 
     return Scaffold(
       backgroundColor: cs.surface,
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            floating: true,
-            expandedHeight: 80,
-            backgroundColor: cs.surface,
-            flexibleSpace: FlexibleSpaceBar(
-              titlePadding: const EdgeInsets.only(left: 16, bottom: 16),
-              title: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    session.routerName,
-                    style: TextStyle(
-                      color: cs.onSurface,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                  Text(
-                    session.host,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: cs.onSurface.withValues(alpha: 0.6),
-                      fontWeight: FontWeight.normal,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              IconButton(
-                onPressed: () {
-                  ref.read(activeRouterProvider.notifier).clear();
-                  context.go(RoutersScreen.routePath);
-                },
-                icon: const Icon(Icons.change_circle_outlined),
-                tooltip: 'Switch Router',
-              ),
-              const SizedBox(width: 8),
-            ],
-          ),
-
-          SliverPadding(
-            padding: const EdgeInsets.all(16),
-            sliver: SliverList(
-              delegate: SliverChildListDelegate([
-                // Chart Section using ProChartCard
-                ProChartCard(
-                  title: 'Active Sessions',
-                  value: activeNow != null ? '$activeNow' : 'Not Connected',
-                  chartData: chartSamples,
-                ),
-
-                const SizedBox(height: 16),
-
-                // KPI Row
-                Row(
+      body: AnimatedPage(
+        child: CustomScrollView(
+          slivers: [
+            SliverAppBar(
+              floating: true,
+              expandedHeight: 80,
+              backgroundColor: cs.surface,
+              flexibleSpace: FlexibleSpaceBar(
+                titlePadding: const EdgeInsets.only(left: 16, bottom: 16),
+                title: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: ProStatCard(
-                        label: 'Revenue Today',
-                        value: revenueToday != null
-                            ? '\$${revenueToday.toStringAsFixed(2)}'
-                            : '—',
-                        icon: Icons.attach_money,
-                        color: Colors.green,
+                    Text(
+                      session.routerName,
+                      style: TextStyle(
+                        color: cs.onSurface,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
                       ),
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: ProStatCard(
-                        label: 'Active Users',
-                        value: activeNow != null ? '$activeNow' : '—',
-                        icon: Icons.people_outline,
-                        color: Colors.orange,
-                        onTap: () {}, // Future: list users
+                    Text(
+                      session.host,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: cs.onSurface.withValues(alpha: 0.6),
+                        fontWeight: FontWeight.normal,
                       ),
                     ),
                   ],
                 ),
+              ),
+              actions: [
+                IconButton(
+                  onPressed: () {
+                    ref.read(activeRouterProvider.notifier).clear();
+                    context.go(RoutersScreen.routePath);
+                  },
+                  icon: const Icon(Icons.change_circle_outlined),
+                  tooltip: 'Switch Router',
+                ),
+                const SizedBox(width: 8),
+              ],
+            ),
 
-                const ProHeader(title: 'Quick Actions'),
+            SliverPadding(
+              padding: const EdgeInsets.all(16),
+              sliver: SliverList(
+                delegate: SliverChildListDelegate([
+                  // Chart Section using ProChartCard
+                  ProChartCard(
+                    title: 'Active Sessions',
+                    value: activeNow != null ? '$activeNow' : 'Not Connected',
+                    chartData: chartSamples,
+                  ),
 
-                // Grid of actions
-                GridView.count(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 1.1,
-                  children: [
-                    ProActionGridItem(
-                      title: 'Print Vouchers',
-                      icon: Icons.print_rounded,
-                      color: Colors.indigo,
-                      onTap: _quickBusy ? null : _quickPrint10,
-                      subtitle: _quickBusy
-                          ? (_quickStatus ?? 'Running...')
-                          : 'Print 10 now',
-                    ),
-                    ProActionGridItem(
-                      title: 'Voucher Mgmt',
-                      icon: Icons.confirmation_number_rounded,
-                      color: Colors.teal,
-                      onTap: () => context.go(
-                        VouchersScreen.routePath,
-                        extra: VouchersArgs(
-                          routerId: session.routerId,
-                          host: session.host,
-                          username: session.username,
-                          password: session.password,
+                  const SizedBox(height: 16),
+
+                  // KPI Row
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ProStatCard(
+                          label: 'Revenue Today',
+                          value: revenueToday != null
+                              ? '\$${revenueToday.toStringAsFixed(2)}'
+                              : '—',
+                          icon: Icons.attach_money,
+                          color: Colors.green,
                         ),
                       ),
-                      subtitle: 'List & Create',
-                    ),
-                    ProActionGridItem(
-                      title: 'Speed Profiles',
-                      icon: Icons.speed_rounded,
-                      color: Colors.amber.shade800,
-                      onTap: () =>
-                          context.push(HotspotUserProfilesScreen.routePath),
-                      subtitle: 'Manage Plans',
-                    ),
-                    ProActionGridItem(
-                      title: 'Router Config',
-                      icon: Icons.settings_input_component_rounded,
-                      color: const Color(0xFFE11D48), // Theme Rose color
-                      onTap: () {
-                        context.push(
-                          RouterInitializationScreen.routePath,
-                          extra: RouterInitializationArgs(
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: ProStatCard(
+                          label: 'Active Users',
+                          value: activeNow != null ? '$activeNow' : '—',
+                          icon: Icons.people_outline,
+                          color: Colors.orange,
+                          onTap: () {}, // Future: list users
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const ProHeader(title: 'Quick Actions'),
+
+                  // Grid of actions
+                  GridView.count(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: 1.1,
+                    children: [
+                      ProActionGridItem(
+                        title: 'Print Vouchers',
+                        icon: Icons.print_rounded,
+                        color: Colors.indigo,
+                        onTap: _quickBusy ? null : _quickPrint10,
+                        subtitle: _quickBusy
+                            ? (_quickStatus ?? 'Running...')
+                            : 'Print 10 now',
+                      ),
+                      ProActionGridItem(
+                        title: 'Voucher Mgmt',
+                        icon: Icons.confirmation_number_rounded,
+                        color: Colors.teal,
+                        onTap: () => context.go(
+                          VouchersScreen.routePath,
+                          extra: VouchersArgs(
+                            routerId: session.routerId,
                             host: session.host,
                             username: session.username,
                             password: session.password,
                           ),
-                        );
-                      },
-                      subtitle: 'Re-initialize',
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 100), // Bottom padding
-              ]),
+                        ),
+                        subtitle: 'List & Create',
+                      ),
+                      ProActionGridItem(
+                        title: 'Speed Profiles',
+                        icon: Icons.speed_rounded,
+                        color: Colors.amber.shade800,
+                        onTap: () =>
+                            context.push(HotspotUserProfilesScreen.routePath),
+                        subtitle: 'Manage Plans',
+                      ),
+                      ProActionGridItem(
+                        title: 'Router Config',
+                        icon: Icons.settings_input_component_rounded,
+                        color: const Color(0xFFE11D48), // Theme Rose color
+                        onTap: () {
+                          context.push(
+                            RouterInitializationScreen.routePath,
+                            extra: RouterInitializationArgs(
+                              host: session.host,
+                              username: session.username,
+                              password: session.password,
+                            ),
+                          );
+                        },
+                        subtitle: 'Re-initialize',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 100), // Bottom padding
+                ]),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
