@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers/active_router_provider.dart';
 import '../screens/routers/routers_screen.dart';
+import '../widgets/password_dialog.dart';
 
 /// Mixin for screens that require router access
 /// Automatically verifies router connection on page load
@@ -26,9 +27,43 @@ mixin RouterAuthMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
 
     setState(() => _verifyingConnection = true);
 
-    final isValid = await ref.read(activeRouterProvider.notifier).reAuthenticate();
-    
+    final result = await ref
+        .read(activeRouterProvider.notifier)
+        .reAuthenticate();
+
     if (!mounted) return;
+
+    if (result == ReAuthResult.authFailed) {
+      setState(() => _verifyingConnection = false);
+
+      final newPass = await PasswordDialog.show(
+        context,
+        title: 'Authentication Failed',
+        message:
+            'The saved password for ${session.routerName} is no longer valid. Please enter the current password.',
+        initialUsername: session.username,
+      );
+
+      if (newPass != null) {
+        final newSession = ActiveRouterSession(
+          routerId: session.routerId,
+          routerName: session.routerName,
+          host: session.host,
+          username: session.username,
+          password: newPass,
+        );
+        await ref.read(activeRouterProvider.notifier).set(newSession);
+        // Re-verify with new credentials
+        return verifyRouterConnection();
+      } else {
+        // User cancelled, clear and go back
+        await ref.read(activeRouterProvider.notifier).clear();
+        if (mounted) context.go(RoutersScreen.routePath);
+        return;
+      }
+    }
+
+    final isValid = result == ReAuthResult.success;
 
     setState(() {
       _verifyingConnection = false;
@@ -45,7 +80,9 @@ mixin RouterAuthMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   }
 
   /// Shows loading widget while verifying connection
-  Widget buildConnectionVerifyingWidget({String message = 'Verifying router connection...'}) {
+  Widget buildConnectionVerifyingWidget({
+    String message = 'Verifying router connection...',
+  }) {
     return Scaffold(
       appBar: AppBar(title: const Text('Loading')),
       body: Center(

@@ -24,7 +24,8 @@ class SavedRouterConnectScreen extends ConsumerStatefulWidget {
       _SavedRouterConnectScreenState();
 }
 
-class _SavedRouterConnectScreenState extends ConsumerState<SavedRouterConnectScreen> {
+class _SavedRouterConnectScreenState
+    extends ConsumerState<SavedRouterConnectScreen> {
   late final TextEditingController _hostCtrl;
   final _usernameCtrl = TextEditingController(text: 'admin');
   final _passwordCtrl = TextEditingController();
@@ -36,6 +37,17 @@ class _SavedRouterConnectScreenState extends ConsumerState<SavedRouterConnectScr
   void initState() {
     super.initState();
     _hostCtrl = TextEditingController(text: widget.router.host);
+
+    // Auto-login: if we have a saved password, try connecting immediately
+    Future.microtask(() async {
+      final savedPass = ref
+          .read(activeRouterProvider.notifier)
+          .getSavedPassword(widget.router.id);
+      if (savedPass != null && savedPass.isNotEmpty) {
+        _passwordCtrl.text = savedPass;
+        _connect();
+      }
+    });
   }
 
   @override
@@ -58,22 +70,30 @@ class _SavedRouterConnectScreenState extends ConsumerState<SavedRouterConnectScr
 
     setState(() {
       _connecting = true;
-      _status = null;
+      _status = 'Connecting to ${widget.router.name}...';
     });
 
-    final client = RouterOsApiClient(host: host, port: 8728, timeout: const Duration(seconds: 8));
+    final client = RouterOsApiClient(
+      host: host,
+      port: 8728,
+      timeout: const Duration(seconds: 8),
+    );
     try {
       await client.login(username: username, password: password);
       final resp = await client.command(['/system/resource/print']);
       final ok = resp.any((s) => s.type == '!re');
-      setState(() => _status = ok ? 'Connected.' : 'Connected, but no data returned.');
+      setState(
+        () => _status = ok ? 'Connected.' : 'Connected, but no data returned.',
+      );
 
       if (ok && mounted) {
         // Check if hotspot is configured before allowing access
         final hotspotRows = await client.printRows('/ip/hotspot/print');
         final hasHotspot = hotspotRows.isNotEmpty;
 
-        ref.read(activeRouterProvider.notifier).set(
+        ref
+            .read(activeRouterProvider.notifier)
+            .set(
               ActiveRouterSession(
                 routerId: widget.router.id,
                 routerName: widget.router.name,
@@ -155,7 +175,10 @@ class _SavedRouterConnectScreenState extends ConsumerState<SavedRouterConnectScr
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Connect', style: Theme.of(context).textTheme.titleMedium),
+                    Text(
+                      'Connect',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
                     const SizedBox(height: 10),
                     TextField(
                       controller: _hostCtrl,
@@ -196,7 +219,9 @@ class _SavedRouterConnectScreenState extends ConsumerState<SavedRouterConnectScr
                               ? const SizedBox(
                                   width: 18,
                                   height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 )
                               : const Icon(Icons.link),
                           label: const Text('Connect'),
@@ -233,4 +258,3 @@ class _SavedRouterConnectScreenState extends ConsumerState<SavedRouterConnectScr
     );
   }
 }
-

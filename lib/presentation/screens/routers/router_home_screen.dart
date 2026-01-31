@@ -288,7 +288,7 @@ class _RouterHomeScreenState extends ConsumerState<RouterHomeScreen>
                   ],
                 ),
 
-                ProHeader(title: 'Quick Actions'),
+                const ProHeader(title: 'Quick Actions'),
 
                 // Grid of actions
                 GridView.count(
@@ -302,7 +302,7 @@ class _RouterHomeScreenState extends ConsumerState<RouterHomeScreen>
                     ProActionGridItem(
                       title: 'Print Vouchers',
                       icon: Icons.print_rounded,
-                      color: Colors.purple,
+                      color: Colors.indigo,
                       onTap: _quickBusy ? null : _quickPrint10,
                       subtitle: _quickBusy
                           ? (_quickStatus ?? 'Running...')
@@ -310,8 +310,8 @@ class _RouterHomeScreenState extends ConsumerState<RouterHomeScreen>
                     ),
                     ProActionGridItem(
                       title: 'Voucher Mgmt',
-                      icon: Icons.airplane_ticket_outlined,
-                      color: Colors.blue,
+                      icon: Icons.confirmation_number_rounded,
+                      color: Colors.teal,
                       onTap: () => context.go(
                         VouchersScreen.routePath,
                         extra: VouchersArgs(
@@ -326,15 +326,15 @@ class _RouterHomeScreenState extends ConsumerState<RouterHomeScreen>
                     ProActionGridItem(
                       title: 'Speed Profiles',
                       icon: Icons.speed_rounded,
-                      color: Colors.teal,
+                      color: Colors.amber.shade800,
                       onTap: () =>
                           context.push(HotspotUserProfilesScreen.routePath),
                       subtitle: 'Manage Plans',
                     ),
                     ProActionGridItem(
-                      title: 'Router Init',
-                      icon: Icons.build_circle_outlined,
-                      color: cs.secondary, // Use theme secondary
+                      title: 'Router Config',
+                      icon: Icons.settings_input_component_rounded,
+                      color: const Color(0xFFE11D48), // Theme Rose color
                       onTap: () {
                         context.push(
                           RouterInitializationScreen.routePath,

@@ -23,12 +23,12 @@ class ActiveRouterSession {
   final String password; // in-memory only
 
   Map<String, dynamic> toMap() => <String, dynamic>{
-        'routerId': routerId,
-        'routerName': routerName,
-        'host': host,
-        'username': username,
-        'password': password,
-      };
+    'routerId': routerId,
+    'routerName': routerName,
+    'host': host,
+    'username': username,
+    'password': password,
+  };
 
   static ActiveRouterSession? fromMap(Map<String, dynamic> map) {
     final routerId = map['routerId'] as String?;
@@ -36,7 +36,13 @@ class ActiveRouterSession {
     final host = map['host'] as String?;
     final username = map['username'] as String?;
     final password = map['password'] as String?;
-    if ([routerId, routerName, host, username, password].any((v) => v == null || v.isEmpty)) {
+    if ([
+      routerId,
+      routerName,
+      host,
+      username,
+      password,
+    ].any((v) => v == null || v.isEmpty)) {
       return null;
     }
     return ActiveRouterSession(
@@ -49,8 +55,13 @@ class ActiveRouterSession {
   }
 }
 
+enum ReAuthResult { success, authFailed, offline }
+
 class ActiveRouterNotifier extends Notifier<ActiveRouterSession?> {
   static const _prefsKey = 'mikrotap.active_router.v1';
+  static const _credsKey = 'mikrotap.router_creds.v1';
+
+  Map<String, String> _savedPasswords = {};
 
   @override
   ActiveRouterSession? build() {
@@ -60,14 +71,25 @@ class ActiveRouterNotifier extends Notifier<ActiveRouterSession?> {
   }
 
   Future<void> _hydrate() async {
-    if (state != null) return;
     final prefs = await SharedPreferences.getInstance();
+
+    // Load saved credentials
+    final credsRaw = prefs.getString(_credsKey);
+    if (credsRaw != null && credsRaw.isNotEmpty) {
+      try {
+        _savedPasswords = Map<String, String>.from(jsonDecode(credsRaw));
+      } catch (_) {}
+    }
+
+    if (state != null) return;
     final raw = prefs.getString(_prefsKey);
     if (raw == null || raw.isEmpty) return;
     try {
       final decoded = jsonDecode(raw);
       if (decoded is Map) {
-        final session = ActiveRouterSession.fromMap(decoded.cast<String, dynamic>());
+        final session = ActiveRouterSession.fromMap(
+          decoded.cast<String, dynamic>(),
+        );
         if (session != null) state = session;
       }
     } catch (_) {
@@ -75,10 +97,16 @@ class ActiveRouterNotifier extends Notifier<ActiveRouterSession?> {
     }
   }
 
+  String? getSavedPassword(String routerId) => _savedPasswords[routerId];
+
   Future<void> set(ActiveRouterSession session) async {
     state = session;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefsKey, jsonEncode(session.toMap()));
+
+    // Also save to credentials store
+    _savedPasswords[session.routerId] = session.password;
+    await prefs.setString(_credsKey, jsonEncode(_savedPasswords));
   }
 
   Future<void> clear() async {
@@ -88,10 +116,9 @@ class ActiveRouterNotifier extends Notifier<ActiveRouterSession?> {
   }
 
   /// Re-authenticates the current router session
-  /// Returns true if connection is valid, false if router is dead/unreachable
-  Future<bool> reAuthenticate() async {
+  Future<ReAuthResult> reAuthenticate() async {
     final session = state;
-    if (session == null) return false;
+    if (session == null) return ReAuthResult.offline;
 
     final client = RouterOsApiClient(
       host: session.host,
@@ -100,26 +127,32 @@ class ActiveRouterNotifier extends Notifier<ActiveRouterSession?> {
     );
 
     try {
-      await client.login(username: session.username, password: session.password);
+      await client.login(
+        username: session.username,
+        password: session.password,
+      );
       // Test with a simple command
       final resp = await client.command(['/system/resource/print']);
       final ok = resp.any((s) => s.type == '!re');
       await client.close();
-      return ok;
+      return ok ? ReAuthResult.success : ReAuthResult.offline;
     } on SocketException {
       await client.close();
-      return false; // Router is dead/unreachable
+      return ReAuthResult.offline;
     } on TimeoutException {
       await client.close();
-      return false; // Router is not responding
+      return ReAuthResult.offline;
+    } on RouterOsApiException {
+      await client.close();
+      return ReAuthResult.authFailed;
     } catch (e) {
       await client.close();
-      return false; // Other error (including auth failure)
+      return ReAuthResult.offline;
     }
   }
 }
 
-final activeRouterProvider = NotifierProvider<ActiveRouterNotifier, ActiveRouterSession?>(
-  ActiveRouterNotifier.new,
-);
-
+final activeRouterProvider =
+    NotifierProvider<ActiveRouterNotifier, ActiveRouterSession?>(
+      ActiveRouterNotifier.new,
+    );
