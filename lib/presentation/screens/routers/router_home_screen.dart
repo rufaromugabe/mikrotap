@@ -12,11 +12,15 @@ import '../../mixins/router_auth_mixin.dart';
 import '../../../data/services/routeros_api_client.dart';
 import '../vouchers/generate_vouchers_screen.dart';
 import '../vouchers/vouchers_screen.dart';
-import 'hotspot_setup_wizard_screen.dart';
+
 import 'hotspot_user_profiles_screen.dart';
-import 'portal_template_grid_screen.dart';
+
 import 'router_initialization_screen.dart';
 import 'routers_screen.dart';
+
+import 'package:google_fonts/google_fonts.dart';
+
+import '../../widgets/thematic_widgets.dart';
 
 class RouterHomeScreen extends ConsumerStatefulWidget {
   const RouterHomeScreen({super.key});
@@ -27,7 +31,8 @@ class RouterHomeScreen extends ConsumerStatefulWidget {
   ConsumerState<RouterHomeScreen> createState() => _RouterHomeScreenState();
 }
 
-class _RouterHomeScreenState extends ConsumerState<RouterHomeScreen> with RouterAuthMixin {
+class _RouterHomeScreenState extends ConsumerState<RouterHomeScreen>
+    with RouterAuthMixin {
   ProviderSubscription<AsyncValue<int>>? _activeUsersSub;
   final List<int> _activeUserSamples = <int>[];
   bool _quickBusy = false;
@@ -38,7 +43,10 @@ class _RouterHomeScreenState extends ConsumerState<RouterHomeScreen> with Router
     super.initState();
     verifyRouterConnection(); // Verify connection on page load
     _checkInitialization(); // Check if router is initialized
-    _activeUsersSub = ref.listenManual(activeHotspotUsersCountProvider, (prev, next) {
+    _activeUsersSub = ref.listenManual(activeHotspotUsersCountProvider, (
+      prev,
+      next,
+    ) {
       next.whenData((count) {
         if (!mounted) return;
         setState(() {
@@ -62,7 +70,10 @@ class _RouterHomeScreenState extends ConsumerState<RouterHomeScreen> with Router
     );
 
     try {
-      await client.login(username: session.username, password: session.password);
+      await client.login(
+        username: session.username,
+        password: session.password,
+      );
       final hotspotRows = await client.printRows('/ip/hotspot/print');
       final hasHotspot = hotspotRows.isNotEmpty;
 
@@ -81,7 +92,6 @@ class _RouterHomeScreenState extends ConsumerState<RouterHomeScreen> with Router
       }
     } catch (e) {
       // If check fails, allow access (connection might be temporary issue)
-      // But log for debugging
       debugPrint('Initialization check failed: $e');
     } finally {
       await client.close();
@@ -124,6 +134,7 @@ class _RouterHomeScreenState extends ConsumerState<RouterHomeScreen> with Router
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(activeRouterProvider);
+    final cs = Theme.of(context).colorScheme;
 
     if (session == null) {
       return Scaffold(
@@ -134,11 +145,26 @@ class _RouterHomeScreenState extends ConsumerState<RouterHomeScreen> with Router
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('No active router. Select a router to start.'),
+                Icon(Icons.router_outlined, size: 64, color: cs.secondary),
+                const SizedBox(height: 24),
+                Text(
+                  'No active router selected',
+                  style: GoogleFonts.inter(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: cs.onSurface,
+                  ),
+                ),
                 const SizedBox(height: 12),
-                FilledButton(
+                const Text(
+                  'Select a router to manage your hotspot,\nvouchers, and users.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                FilledButton.icon(
                   onPressed: () => context.go(RoutersScreen.routePath),
-                  child: const Text('Switch router'),
+                  icon: const Icon(Icons.swap_horiz_outlined),
+                  label: const Text('Switch router'),
                 ),
               ],
             ),
@@ -157,7 +183,8 @@ class _RouterHomeScreenState extends ConsumerState<RouterHomeScreen> with Router
     final revenueToday = vouchers.maybeWhen(
       data: (items) {
         final now = DateTime.now();
-        bool sameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
+        bool sameDay(DateTime a, DateTime b) =>
+            a.year == b.year && a.month == b.month && a.day == b.day;
         num sum = 0;
         for (final v in items) {
           final soldAt = v.soldAt;
@@ -177,368 +204,157 @@ class _RouterHomeScreenState extends ConsumerState<RouterHomeScreen> with Router
         : (activeNow != null ? <int>[activeNow] : const <int>[]);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(session.routerName),
-        actions: [
-          TextButton(
-            onPressed: () {
-              ref.read(activeRouterProvider.notifier).clear();
-              context.go(RoutersScreen.routePath);
-            },
-            child: const Text('Switch'),
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _HeroCard(
-              title: 'Portal Preview (Live)',
-              subtitle: 'Design the login page and preview instantly in-app (WebView) — then apply to router.',
-              icon: Icons.web,
-              primaryLabel: 'Open Portal Designer',
-              onPrimary: () => context.push(PortalTemplateGridScreen.routePath),
-              secondaryLabel: 'Hotspot setup',
-              onSecondary: () {
-                context.push(
-                  HotspotSetupWizardScreen.routePath,
-                  extra: HotspotSetupArgs(
-                    routerId: session.routerId,
-                    host: session.host,
-                    username: session.username,
-                    password: session.password,
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 12),
-
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                _KpiCard(
-                  title: 'Active users',
-                  value: activeUsers.when(
-                    data: (v) => '$v',
-                    error: (_, __) => '—',
-                    loading: () => '…',
-                  ),
-                  subtitle: 'Hotspot sessions right now',
-                  icon: Icons.people_alt_outlined,
-                ),
-                _KpiCard(
-                  title: 'Revenue today',
-                  value: revenueToday == null ? '…' : revenueToday.toString(),
-                  subtitle: 'Sum of voucher prices sold today',
-                  icon: Icons.payments_outlined,
-                ),
-                _ActionTile(
-                  title: 'Print 10 vouchers',
-                  subtitle: _quickBusy ? (_quickStatus ?? 'Working…') : 'One click: generate + open print preview',
-                  icon: Icons.print_outlined,
-                  primary: true,
-                  onTap: _quickBusy ? null : _quickPrint10,
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text('Active users (live)', style: Theme.of(context).textTheme.titleMedium),
-                        ),
-                        Text(
-                          activeNow == null ? '' : 'Now: $activeNow',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
+      backgroundColor: cs.surface,
+      body: CustomScrollView(
+        slivers: [
+          SliverAppBar(
+            floating: true,
+            expandedHeight: 80,
+            backgroundColor: cs.surface,
+            flexibleSpace: FlexibleSpaceBar(
+              titlePadding: const EdgeInsets.only(left: 16, bottom: 16),
+              title: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    session.routerName,
+                    style: TextStyle(
+                      color: cs.onSurface,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
                     ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      height: 180,
-                      child: _ActiveUsersChart(samples: chartSamples),
+                  ),
+                  Text(
+                    session.host,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: cs.onSurface.withValues(alpha: 0.6),
+                      fontWeight: FontWeight.normal,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              IconButton(
+                onPressed: () {
+                  ref.read(activeRouterProvider.notifier).clear();
+                  context.go(RoutersScreen.routePath);
+                },
+                icon: const Icon(Icons.change_circle_outlined),
+                tooltip: 'Switch Router',
+              ),
+              const SizedBox(width: 8),
+            ],
+          ),
+
+          SliverPadding(
+            padding: const EdgeInsets.all(16),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
+                // Chart Section using ProChartCard
+                ProChartCard(
+                  title: 'Active Sessions',
+                  value: activeNow != null ? '$activeNow' : 'Not Connected',
+                  chartData: chartSamples,
+                ),
+
+                const SizedBox(height: 16),
+
+                // KPI Row
+                Row(
+                  children: [
+                    Expanded(
+                      child: ProStatCard(
+                        label: 'Revenue Today',
+                        value: revenueToday != null
+                            ? '\$${revenueToday.toStringAsFixed(2)}'
+                            : '—',
+                        icon: Icons.attach_money,
+                        color: Colors.green,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: ProStatCard(
+                        label: 'Active Users',
+                        value: activeNow != null ? '$activeNow' : '—',
+                        icon: Icons.people_outline,
+                        color: Colors.orange,
+                        onTap: () {}, // Future: list users
+                      ),
                     ),
                   ],
                 ),
-              ),
-            ),
 
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                _ActionTile(
-                  title: 'Vouchers',
-                  subtitle: 'Create, sync, and print vouchers',
-                  icon: Icons.confirmation_number_outlined,
-                  onTap: () {
-                    context.go(
-                      VouchersScreen.routePath,
-                      extra: VouchersArgs(
-                        routerId: session.routerId,
-                        host: session.host,
-                        username: session.username,
-                        password: session.password,
-                      ),
-                    );
-                  },
-                ),
-                _ActionTile(
-                  title: 'Initialize',
-                  subtitle: 'Guided onboarding (API user, portal, cleanup)',
-                  icon: Icons.tune,
-                  onTap: () {
-                    context.push(
-                      RouterInitializationScreen.routePath,
-                      extra: RouterInitializationArgs(
-                        host: session.host,
-                        username: session.username,
-                        password: session.password,
-                      ),
-                    );
-                  },
-                ),
-                _ActionTile(
-                  title: 'Plans',
-                  subtitle: 'Speed profiles for vouchers',
-                  icon: Icons.speed,
-                  onTap: () => context.push(HotspotUserProfilesScreen.routePath),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () {
-                ref.read(activeRouterProvider.notifier).clear();
-                context.go(RoutersScreen.routePath);
-              },
-              icon: const Icon(Icons.logout),
-              label: const Text('Disconnect'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+                ProHeader(title: 'Quick Actions'),
 
-class _KpiCard extends StatelessWidget {
-  const _KpiCard({
-    required this.title,
-    required this.value,
-    required this.subtitle,
-    required this.icon,
-  });
-
-  final IconData icon;
-  final String title;
-  final String value;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 240,
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(icon),
-              const SizedBox(height: 12),
-              Text(title, style: Theme.of(context).textTheme.titleSmall),
-              const SizedBox(height: 6),
-              Text(
-                value,
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 4),
-              Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ActionTile extends StatelessWidget {
-  const _ActionTile({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.onTap,
-    this.primary = false,
-  });
-
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final VoidCallback? onTap;
-  final bool primary;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 240,
-      child: Card(
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(icon),
-                const SizedBox(height: 12),
-                Text(title, style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 4),
-                Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-                if (primary) ...[
-                  const SizedBox(height: 12),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: FilledButton(
-                      onPressed: onTap,
-                      child: const Text('Run'),
+                // Grid of actions
+                GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 1.4,
+                  children: [
+                    ProActionGridItem(
+                      title: 'Print Vouchers',
+                      icon: Icons.print_rounded,
+                      color: Colors.purple,
+                      onTap: _quickBusy ? null : _quickPrint10,
+                      subtitle: _quickBusy
+                          ? (_quickStatus ?? 'Running...')
+                          : 'Print 10 now',
                     ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _HeroCard extends StatelessWidget {
-  const _HeroCard({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.primaryLabel,
-    required this.onPrimary,
-    required this.secondaryLabel,
-    required this.onSecondary,
-  });
-
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final String primaryLabel;
-  final VoidCallback onPrimary;
-  final String secondaryLabel;
-  final VoidCallback onSecondary;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: cs.outlineVariant),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                color: cs.primaryContainer,
-              ),
-              child: Icon(icon, color: cs.onPrimaryContainer),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 6),
-                  Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      FilledButton.icon(
-                        onPressed: onPrimary,
-                        icon: const Icon(Icons.visibility_outlined),
-                        label: Text(primaryLabel),
+                    ProActionGridItem(
+                      title: 'Voucher Mgmt',
+                      icon: Icons.airplane_ticket_outlined,
+                      color: Colors.blue,
+                      onTap: () => context.go(
+                        VouchersScreen.routePath,
+                        extra: VouchersArgs(
+                          routerId: session.routerId,
+                          host: session.host,
+                          username: session.username,
+                          password: session.password,
+                        ),
                       ),
-                      OutlinedButton.icon(
-                        onPressed: onSecondary,
-                        icon: const Icon(Icons.wifi_tethering),
-                        label: Text(secondaryLabel),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                      subtitle: 'List & Create',
+                    ),
+                    ProActionGridItem(
+                      title: 'Speed Profiles',
+                      icon: Icons.speed_rounded,
+                      color: Colors.teal,
+                      onTap: () =>
+                          context.push(HotspotUserProfilesScreen.routePath),
+                      subtitle: 'Manage Plans',
+                    ),
+                    ProActionGridItem(
+                      title: 'Router Init',
+                      icon: Icons.build_circle_outlined,
+                      color: cs.secondary, // Use theme secondary
+                      onTap: () {
+                        context.push(
+                          RouterInitializationScreen.routePath,
+                          extra: RouterInitializationArgs(
+                            host: session.host,
+                            username: session.username,
+                            password: session.password,
+                          ),
+                        );
+                      },
+                      subtitle: 'Re-initialize',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 100), // Bottom padding
+              ]),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ActiveUsersChart extends StatelessWidget {
-  const _ActiveUsersChart({required this.samples});
-
-  final List<int> samples;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    if (samples.isEmpty) {
-      return Center(child: Text('No data yet.', style: Theme.of(context).textTheme.bodySmall));
-    }
-
-    final maxY = samples.fold<int>(0, (m, v) => v > m ? v : m).toDouble();
-    final spots = <FlSpot>[
-      for (var i = 0; i < samples.length; i++) FlSpot(i.toDouble(), samples[i].toDouble()),
-    ];
-
-    return LineChart(
-      LineChartData(
-        minY: 0,
-        maxY: (maxY < 3) ? 3 : maxY + 1,
-        gridData: const FlGridData(show: true),
-        titlesData: const FlTitlesData(show: false),
-        borderData: FlBorderData(show: false),
-        lineBarsData: [
-          LineChartBarData(
-            spots: spots,
-            isCurved: true,
-            barWidth: 3,
-            color: cs.primary,
-            dotData: const FlDotData(show: false),
-            belowBarData: BarAreaData(show: true, color: cs.primary.withValues(alpha: 0.12)),
           ),
         ],
       ),
     );
   }
 }
-

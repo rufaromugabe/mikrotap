@@ -1,5 +1,4 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,6 +9,7 @@ import '../../../data/services/routeros_api_client.dart';
 import '../../providers/auth_providers.dart';
 import '../../providers/voucher_providers.dart';
 import '../../services/voucher_generation_service.dart';
+import '../../widgets/thematic_widgets.dart';
 
 class GenerateVouchersArgs {
   const GenerateVouchersArgs({
@@ -33,10 +33,12 @@ class GenerateVouchersScreen extends ConsumerStatefulWidget {
   final GenerateVouchersArgs args;
 
   @override
-  ConsumerState<GenerateVouchersScreen> createState() => _GenerateVouchersScreenState();
+  ConsumerState<GenerateVouchersScreen> createState() =>
+      _GenerateVouchersScreenState();
 }
 
-class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen> {
+class _GenerateVouchersScreenState
+    extends ConsumerState<GenerateVouchersScreen> {
   final _quantityCtrl = TextEditingController(text: '10');
 
   bool _loading = false;
@@ -64,7 +66,10 @@ class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen>
 
     final repo = ref.read(routerPlanRepoProvider);
     try {
-      await repo.client.login(username: widget.args.username, password: widget.args.password);
+      await repo.client.login(
+        username: widget.args.username,
+        password: widget.args.password,
+      );
       final plans = await repo.fetchPlans();
       plans.sort((a, b) => a.name.compareTo(b.name));
       setState(() {
@@ -99,9 +104,14 @@ class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen>
     final client = ref.read(routerClientProvider);
 
     try {
-      await client.login(username: widget.args.username, password: widget.args.password);
+      await client.login(
+        username: widget.args.username,
+        password: widget.args.password,
+      );
 
-      final operator = ref.read(authStateProvider).maybeWhen(data: (u) => u, orElse: () => null);
+      final operator = ref
+          .read(authStateProvider)
+          .maybeWhen(data: (u) => u, orElse: () => null);
       final batchId = const Uuid().v4();
 
       await VoucherGenerationService.generateAndPush(
@@ -114,16 +124,17 @@ class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen>
       );
 
       if (!mounted) return;
-      
-      // Invalidate vouchers provider to refresh the list
+
       ref.invalidate(vouchersProvider);
       ref.invalidate(vouchersProviderFamily(widget.args.routerId));
-      
+
       context.pop();
     } on RouterOsApiException catch (e) {
       setState(() => _status = e.message);
     } on TimeoutException {
-      setState(() => _status = 'Timeout connecting to ${widget.args.host}:8728');
+      setState(
+        () => _status = 'Timeout connecting to ${widget.args.host}:8728',
+      );
     } catch (e) {
       setState(() => _status = 'Error: $e');
     } finally {
@@ -134,9 +145,12 @@ class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen>
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     return Scaffold(
+      backgroundColor: cs.surface,
       appBar: AppBar(
-        title: const Text('Generate vouchers'),
+        title: const Text('New Vouchers'),
         actions: [
           IconButton(
             tooltip: 'Refresh plans',
@@ -150,117 +164,204 @@ class _GenerateVouchersScreenState extends ConsumerState<GenerateVouchersScreen>
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            DropdownButtonFormField<HotspotPlan>(
-              value: _selectedPlan,
-              decoration: const InputDecoration(
-                labelText: 'Select Plan',
-                border: OutlineInputBorder(),
-              ),
-              items: _plans
-                  .map((plan) => DropdownMenuItem(
-                        value: plan,
+            const ProHeader(title: 'Configuration'),
+            ProCard(
+              children: [
+                DropdownButtonFormField<HotspotPlan>(
+                  value: _selectedPlan,
+                  decoration: const InputDecoration(
+                    labelText: 'Hotspot Plan',
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                  ),
+                  items: _plans
+                      .map(
+                        (plan) => DropdownMenuItem(
+                          value: plan,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                plan.name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                '\$${plan.price} • ${plan.validity} • ${plan.dataLimitMb > 0 ? '${plan.dataLimitMb}MB' : 'Unlimited'}',
+                                style: TextStyle(
+                                  color: cs.onSurfaceVariant,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: _loading
+                      ? null
+                      : (plan) {
+                          setState(() => _selectedPlan = plan);
+                        },
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _quantityCtrl,
+                  enabled: !_loading && _selectedPlan != null,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Number of Vouchers',
+                    border: OutlineInputBorder(),
+                    helperText: 'Recommended max: 100 per batch',
+                  ),
+                ),
+              ],
+            ),
+
+            if (_selectedPlan != null) ...[
+              const ProHeader(title: 'Plan Summary'),
+              ProCard(
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: cs.primary.withOpacity(0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.info_outline,
+                          color: cs.primary,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(plan.name),
                             Text(
-                              '\$${plan.price} • ${plan.validity} • ${plan.dataLimitMb > 0 ? '${plan.dataLimitMb}MB' : 'Unlimited'}',
-                              style: Theme.of(context).textTheme.bodySmall,
+                              '${_selectedPlan!.name} active',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              'Valid for ${_selectedPlan!.validity} at ${_selectedPlan!.rateLimit}',
+                              style: TextStyle(
+                                color: cs.onSurfaceVariant,
+                                fontSize: 12,
+                              ),
                             ),
                           ],
                         ),
-                      ))
-                  .toList(),
-              onChanged: _loading
-                  ? null
-                  : (plan) {
-                      setState(() => _selectedPlan = plan);
-                    },
-            ),
-            const SizedBox(height: 16),
-            if (_selectedPlan != null) ...[
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+                      ),
                       Text(
-                        'Plan Details',
-                        style: Theme.of(context).textTheme.titleMedium,
+                        '\$${_selectedPlan!.price}',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: cs.primary,
+                        ),
                       ),
-                      const SizedBox(height: 8),
-                      _buildDetailRow('Price', '\$${_selectedPlan!.price}'),
-                      _buildDetailRow('Validity', _selectedPlan!.validity),
-                      _buildDetailRow(
-                        'Data Limit',
-                        _selectedPlan!.dataLimitMb > 0 ? '${_selectedPlan!.dataLimitMb} MB' : 'Unlimited',
-                      ),
-                      _buildDetailRow('Type', _selectedPlan!.mode == TicketMode.pin ? 'PIN' : 'User/Password'),
-                      _buildDetailRow('Speed', _selectedPlan!.rateLimit),
                     ],
                   ),
-                ),
+                  const SizedBox(height: 16),
+                  const Divider(),
+                  const SizedBox(height: 12),
+                  _detailRow(
+                    'Authentication',
+                    _selectedPlan!.mode == TicketMode.pin
+                        ? 'PIN Only'
+                        : 'Username & Password',
+                  ),
+                  _detailRow(
+                    'Data Limit',
+                    _selectedPlan!.dataLimitMb > 0
+                        ? '${_selectedPlan!.dataLimitMb} MB'
+                        : 'Unlimited',
+                  ),
+                  _detailRow(
+                    'Time Group',
+                    _selectedPlan!.timeType == TicketType.paused
+                        ? 'Paused'
+                        : 'Elapsed',
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
             ],
-            TextField(
-              controller: _quantityCtrl,
-              enabled: !_loading && _selectedPlan != null,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Quantity',
-                border: OutlineInputBorder(),
-                helperText: 'How many vouchers to generate?',
-              ),
-            ),
-            const SizedBox(height: 24),
+
+            const SizedBox(height: 32),
             FilledButton.icon(
               onPressed: (_loading || _selectedPlan == null) ? null : _generate,
               icon: _loading
                   ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     )
-                  : const Icon(Icons.play_arrow),
-              label: const Text('Generate vouchers'),
-            ),
-            if (_status != null) ...[
-              const SizedBox(height: 12),
-              Card(
-                color: _status!.startsWith('Error') || _status!.startsWith('Failed')
-                    ? Theme.of(context).colorScheme.errorContainer
-                    : null,
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Text(_status!),
+                  : const Icon(Icons.auto_fix_high),
+              label: Text(
+                _loading ? (_status ?? 'Generating...') : 'Generate Batch',
+              ),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
                 ),
               ),
+            ),
+
+            if (_status != null && !_loading) ...[
+              const SizedBox(height: 16),
+              ProCard(
+                backgroundColor:
+                    _status!.toLowerCase().contains('error') ||
+                        _status!.toLowerCase().contains('failed')
+                    ? cs.errorContainer.withOpacity(0.2)
+                    : cs.primaryContainer.withOpacity(0.2),
+                children: [
+                  Text(
+                    _status!,
+                    style: TextStyle(
+                      color:
+                          _status!.toLowerCase().contains('error') ||
+                              _status!.toLowerCase().contains('failed')
+                          ? cs.error
+                          : cs.primary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
             ],
+            const SizedBox(height: 48),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildDetailRow(String label, String value) {
+  Widget _detailRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                ),
-          ),
+          Text(label, style: const TextStyle(fontSize: 13, color: Colors.grey)),
           Text(
             value,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w500,
-                ),
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
           ),
         ],
       ),

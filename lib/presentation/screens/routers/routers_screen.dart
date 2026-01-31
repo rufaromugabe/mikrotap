@@ -6,6 +6,7 @@ import '../../providers/router_providers.dart';
 import 'routers_discovery_screen.dart';
 import 'saved_router_connect_screen.dart';
 import 'manual_router_add_screen.dart';
+import '../../widgets/thematic_widgets.dart';
 
 class RoutersScreen extends ConsumerWidget {
   const RoutersScreen({super.key});
@@ -15,16 +16,13 @@ class RoutersScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final routers = ref.watch(routersProvider);
+    final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
+      backgroundColor: cs.surface,
       appBar: AppBar(
-        title: const Text('Switch router'),
+        title: const Text('Manage Routers'),
         actions: [
-          IconButton(
-            tooltip: 'Add manually',
-            onPressed: () => context.push(ManualRouterAddScreen.routePath),
-            icon: const Icon(Icons.add),
-          ),
           IconButton(
             tooltip: 'Discover (MNDP)',
             onPressed: () => context.go(RoutersDiscoveryScreen.routePath),
@@ -33,62 +31,136 @@ class RoutersScreen extends ConsumerWidget {
           const SizedBox(width: 8),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.push(ManualRouterAddScreen.routePath),
-        child: const Icon(Icons.add),
+        icon: const Icon(Icons.add),
+        label: const Text('Add Manually'),
       ),
       body: SafeArea(
         child: routers.when(
           data: (items) {
             if (items.isEmpty) {
-              return const Center(
+              return Center(
                 child: Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Text('No routers saved yet. Tap Discover to add one.'),
+                  padding: const EdgeInsets.all(32),
+                  child: ProCard(
+                    padding: const EdgeInsets.all(32),
+                    children: [
+                      Icon(
+                        Icons.router_outlined,
+                        size: 64,
+                        color: cs.primary.withValues(alpha: 0.2),
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        'No Routers Found',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: cs.onSurface,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Connect your MikroTik to the network and use Discover to find it automatically.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: cs.onSurfaceVariant),
+                      ),
+                      const SizedBox(height: 32),
+                      FilledButton.icon(
+                        onPressed: () =>
+                            context.go(RoutersDiscoveryScreen.routePath),
+                        icon: const Icon(Icons.radar),
+                        label: const Text('Start Discovery'),
+                      ),
+                    ],
+                  ),
                 ),
               );
             }
 
             return ListView.separated(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(16),
               itemCount: items.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
               itemBuilder: (context, i) {
                 final r = items[i];
                 final subtitle = [
-                  if (r.host.isNotEmpty) 'IP: ${r.host}',
-                  if (r.macAddress != null) 'MAC: ${r.macAddress}',
-                  if (r.version != null) 'v${r.version}',
+                  if (r.host.isNotEmpty) r.host,
+                  if (r.macAddress != null) r.macAddress,
                 ].join(' • ');
 
-                return Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.router_outlined),
-                    title: Text(r.name),
-                    subtitle: Text(subtitle.isEmpty ? 'Saved router' : subtitle),
-                    onTap: () {
-                      context.push(
-                        SavedRouterConnectScreen.routePath,
-                        extra: r,
-                      );
-                    },
-                    trailing: IconButton(
-                      tooltip: 'Remove',
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () async {
-                        await ref.read(routerRepositoryProvider).deleteRouter(r.id);
+                return ProCard(
+                  padding: EdgeInsets.zero,
+                  children: [
+                    ListTile(
+                      contentPadding: const EdgeInsets.all(16),
+                      leading: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: cs.primary.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(Icons.router, color: cs.primary),
+                      ),
+                      title: Text(
+                        r.name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                        ),
+                      ),
+                      subtitle: Text(
+                        subtitle.isEmpty ? 'Manually added' : subtitle,
+                        style: TextStyle(
+                          color: cs.onSurfaceVariant,
+                          fontSize: 12,
+                        ),
+                      ),
+                      onTap: () {
+                        context.push(
+                          SavedRouterConnectScreen.routePath,
+                          extra: r,
+                        );
                       },
+                      trailing: IconButton(
+                        icon: const Icon(Icons.chevron_right_rounded),
+                        onPressed: () {
+                          context.push(
+                            SavedRouterConnectScreen.routePath,
+                            extra: r,
+                          );
+                        },
+                      ),
                     ),
-                  ),
+                  ],
                 );
               },
             );
           },
-          error: (e, _) => Center(child: Text('Error: $e')),
+          error: (e, _) => Center(
+            child: ProCard(
+              children: [
+                Icon(Icons.error_outline, color: cs.error, size: 48),
+                const SizedBox(height: 16),
+                Text(
+                  'Failed to load routers',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: cs.error,
+                  ),
+                ),
+                Text(
+                  '$e',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: cs.error),
+                ),
+              ],
+            ),
+          ),
           loading: () => const Center(child: CircularProgressIndicator()),
         ),
       ),
     );
   }
 }
-

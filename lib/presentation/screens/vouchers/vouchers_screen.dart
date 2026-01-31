@@ -8,6 +8,7 @@ import '../../providers/active_router_provider.dart';
 import '../routers/router_home_screen.dart';
 import 'generate_vouchers_screen.dart';
 import 'print_vouchers_screen.dart';
+import '../../widgets/thematic_widgets.dart';
 
 class VouchersArgs {
   const VouchersArgs({
@@ -32,7 +33,6 @@ class VouchersScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Delegate to stateful body to hold filter state.
     return _VouchersBody(args: args);
   }
 }
@@ -49,20 +49,20 @@ class _VouchersBody extends ConsumerStatefulWidget {
 class _VouchersBodyState extends ConsumerState<_VouchersBody> {
   _VoucherUsageFilter _filter = _VoucherUsageFilter.all;
 
-
   @override
   Widget build(BuildContext context) {
     final args = widget.args;
     final vouchers = ref.watch(vouchersProvider);
+    final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
+      backgroundColor: cs.surface,
       appBar: AppBar(
         title: const Text('Vouchers'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
-            final r = GoRouter.of(context);
-            if (r.canPop()) {
+            if (context.canPop()) {
               context.pop();
             } else {
               context.go(RouterHomeScreen.routePath);
@@ -71,87 +71,117 @@ class _VouchersBodyState extends ConsumerState<_VouchersBody> {
         ),
         actions: [
           IconButton(
-            tooltip: 'Refresh vouchers',
-            onPressed: () {
-              // Refresh the vouchers provider
-              ref.invalidate(vouchersProvider);
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Refreshing vouchers...')),
-                );
-              }
-            },
+            tooltip: 'Refresh',
+            onPressed: () => ref.invalidate(vouchersProvider),
             icon: const Icon(Icons.refresh),
           ),
-          FilledButton.icon(
-            onPressed: () async {
-              await context.push(
-                GenerateVouchersScreen.routePath,
-                extra: GenerateVouchersArgs(
-                  routerId: args.routerId,
-                  host: args.host,
-                  username: args.username,
-                  password: args.password,
-                ),
-              );
-              // Refresh vouchers when returning from generate screen
-              if (mounted) {
-                ref.invalidate(vouchersProvider);
-              }
-            },
-            icon: const Icon(Icons.add),
-            label: const Text('Generate'),
-          ),
           const SizedBox(width: 8),
-          OutlinedButton.icon(
-            onPressed: () {
-              context.push(
-                PrintVouchersScreen.routePath,
-                extra: PrintVouchersArgs(
-                  routerId: args.routerId,
-                  filter: switch (_filter) {
-                    _VoucherUsageFilter.all => VoucherPrintFilter.all,
-                    _VoucherUsageFilter.inUse => VoucherPrintFilter.inUse,
-                    _VoucherUsageFilter.neverUsed => VoucherPrintFilter.neverUsed,
-                  },
-                ),
-              );
-            },
-            icon: const Icon(Icons.print),
-            label: const Text('Print'),
-          ),
-          const SizedBox(width: 12),
         ],
       ),
       body: SafeArea(
         child: Column(
           children: [
+            // Filter and Action Bar
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: SegmentedButton<_VoucherUsageFilter>(
-                  selected: {_filter},
-                  showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(value: _VoucherUsageFilter.all, label: Text('All')),
-                    ButtonSegment(value: _VoucherUsageFilter.inUse, label: Text('In use')),
-                    ButtonSegment(value: _VoucherUsageFilter.neverUsed, label: Text('Never used')),
-                  ],
-                  onSelectionChanged: (s) => setState(() => _filter = s.first),
-                ),
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: SegmentedButton<_VoucherUsageFilter>(
+                      selected: {_filter},
+                      showSelectedIcon: false,
+                      segments: const [
+                        ButtonSegment(
+                          value: _VoucherUsageFilter.all,
+                          label: Text('All'),
+                        ),
+                        ButtonSegment(
+                          value: _VoucherUsageFilter.inUse,
+                          label: Text('In use'),
+                        ),
+                        ButtonSegment(
+                          value: _VoucherUsageFilter.neverUsed,
+                          label: Text('New'),
+                        ),
+                      ],
+                      onSelectionChanged: (s) =>
+                          setState(() => _filter = s.first),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 6),
+
+            // Stats Row / Quick Actions
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () => context.push(
+                        GenerateVouchersScreen.routePath,
+                        extra: GenerateVouchersArgs(
+                          routerId: args.routerId,
+                          host: args.host,
+                          username: args.username,
+                          password: args.password,
+                        ),
+                      ),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Generate'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => context.push(
+                        PrintVouchersScreen.routePath,
+                        extra: PrintVouchersArgs(
+                          routerId: args.routerId,
+                          filter: switch (_filter) {
+                            _VoucherUsageFilter.all => VoucherPrintFilter.all,
+                            _VoucherUsageFilter.inUse =>
+                              VoucherPrintFilter.inUse,
+                            _VoucherUsageFilter.neverUsed =>
+                              VoucherPrintFilter.neverUsed,
+                          },
+                        ),
+                      ),
+                      icon: const Icon(Icons.print_outlined),
+                      label: const Text('Print List'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const ProHeader(title: 'Voucher List'),
+
             Expanded(
               child: vouchers.when(
                 data: (items) {
                   if (items.isEmpty) {
-                    return const Center(child: Text('No vouchers yet. Tap Generate.'));
+                    return Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.airplane_ticket_outlined,
+                            size: 64,
+                            color: cs.secondary.withValues(alpha: 0.5),
+                          ),
+                          const SizedBox(height: 16),
+                          const Text('No vouchers found.'),
+                        ],
+                      ),
+                    );
                   }
 
                   final filtered = items.where((v) {
-                    final isUsed = (v.firstUsedAt != null) || v.status == VoucherStatus.used;
+                    final isUsed =
+                        (v.firstUsedAt != null) ||
+                        v.status == VoucherStatus.used;
                     switch (_filter) {
                       case _VoucherUsageFilter.all:
                         return true;
@@ -162,85 +192,82 @@ class _VouchersBodyState extends ConsumerState<_VouchersBody> {
                     }
                   }).toList();
 
-                  if (filtered.isEmpty) {
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Text(
-                          _filter == _VoucherUsageFilter.inUse
-                              ? 'No vouchers in use yet.'
-                              : 'No never-used vouchers.',
-                        ),
-                      ),
-                    );
-                  }
-
                   return ListView.separated(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     itemCount: filtered.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
                     itemBuilder: (context, i) {
                       final v = filtered[i];
                       final isPin = v.username == v.password;
-                      final usedBytes = ((v.usageBytesIn ?? 0) + (v.usageBytesOut ?? 0));
-                      final lines = <String>[
-                        if (!isPin) 'Pass: ${v.password}',
-                        if (v.price != null) 'Price: \$${v.price}',
-                        if (v.soldByName != null) 'By: ${v.soldByName}',
-                        if (v.firstUsedAt != null) 
-                          'Started: ${_formatDate(v.firstUsedAt!)}'
-                        else 
-                          'Created: ${_formatDate(v.createdAt)}',
-                        if (usedBytes > 0) 'Used: ${_humanBytes(usedBytes)}',
-                      ];
-                      return Card(
-                        child: ListTile(
-                          leading: Icon(
-                            v.status == VoucherStatus.active 
-                                ? Icons.confirmation_number 
-                                : Icons.check_circle,
-                            color: v.status == VoucherStatus.active 
-                                ? Colors.green 
-                                : Colors.grey,
+                      final usedBytes =
+                          ((v.usageBytesIn ?? 0) + (v.usageBytesOut ?? 0));
+
+                      return ProCard(
+                        padding: EdgeInsets.zero,
+                        children: [
+                          ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            leading: Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color:
+                                    (v.status == VoucherStatus.active
+                                            ? Colors.green
+                                            : cs.outlineVariant)
+                                        .withValues(alpha: 0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                v.status == VoucherStatus.active
+                                    ? Icons.confirmation_number_outlined
+                                    : Icons.check_circle_outline,
+                                color: v.status == VoucherStatus.active
+                                    ? Colors.green
+                                    : cs.outline,
+                              ),
+                            ),
+                            title: Text(
+                              isPin ? v.username : 'User: ${v.username}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 18,
+                              ),
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (!isPin) Text('Pass: ${v.password}'),
+                                Row(
+                                  children: [
+                                    if (v.price != null)
+                                      Text('\$${v.price} • '),
+                                    Text(
+                                      usedBytes > 0
+                                          ? 'Used: ${_humanBytes(usedBytes)}'
+                                          : 'New',
+                                    ),
+                                  ],
+                                ),
+                                Text(
+                                  v.firstUsedAt != null
+                                      ? 'Started: ${_formatDate(v.firstUsedAt!)}'
+                                      : 'Created: ${_formatDate(v.createdAt)}',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: cs.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 20),
+                              onPressed: () => _confirmDelete(v),
+                            ),
                           ),
-                          title: Text(
-                            isPin ? 'PIN: ${v.username}' : 'User: ${v.username}',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                          ),
-                          subtitle: Text(lines.join(' • ')),
-                          trailing: IconButton(
-                            tooltip: 'Delete',
-                            icon: const Icon(Icons.delete_outline),
-                            onPressed: () async {
-                              final repo = ref.read(routerVoucherRepoProvider);
-                              final session = ref.read(activeRouterProvider);
-                              if (session == null) return;
-                              
-                              try {
-                                await repo.client.login(
-                                  username: session.username,
-                                  password: session.password,
-                                );
-                                await repo.deleteVoucher(v.id);
-                                // Refresh the list
-                                ref.invalidate(vouchersProvider);
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Voucher deleted')),
-                                  );
-                                }
-                              } catch (e) {
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('Delete failed: $e')),
-                                  );
-                                }
-                              } finally {
-                                repo.client.close();
-                              }
-                            },
-                          ),
-                        ),
+                        ],
                       );
                     },
                   );
@@ -253,6 +280,54 @@ class _VouchersBodyState extends ConsumerState<_VouchersBody> {
         ),
       ),
     );
+  }
+
+  Future<void> _confirmDelete(Voucher v) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Voucher'),
+        content: Text('Are you sure you want to delete ${v.username}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      final repo = ref.read(routerVoucherRepoProvider);
+      final session = ref.read(activeRouterProvider);
+      if (session == null) return;
+
+      try {
+        await repo.client.login(
+          username: session.username,
+          password: session.password,
+        );
+        await repo.deleteVoucher(v.id);
+        ref.invalidate(vouchersProvider);
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Voucher deleted')));
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Error: $e')));
+        }
+      } finally {
+        repo.client.close();
+      }
+    }
   }
 }
 
@@ -270,6 +345,5 @@ String _humanBytes(int n) {
 
 String _formatDate(DateTime date) {
   return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')} '
-         '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+      '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
 }
-

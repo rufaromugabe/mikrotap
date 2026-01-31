@@ -10,6 +10,9 @@ import '../../providers/auth_providers.dart';
 import '../routers/router_initialization_screen.dart';
 import 'plan_screen.dart';
 
+import '../routers/hotspot_setup_wizard_screen.dart';
+import '../../widgets/thematic_widgets.dart';
+
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
@@ -37,7 +40,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
 
     try {
-      await client.login(username: session.username, password: session.password);
+      await client.login(
+        username: session.username,
+        password: session.password,
+      );
       final hotspotRows = await client.printRows('/ip/hotspot/print');
       final hasHotspot = hotspotRows.isNotEmpty;
 
@@ -67,85 +73,151 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final auth = ref.watch(authStateProvider);
     final user = auth.maybeWhen(data: (u) => u, orElse: () => null);
     final active = ref.watch(activeRouterProvider);
+    final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
+      backgroundColor: cs.surface,
       appBar: AppBar(title: const Text('Settings')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // Account Section
+            ProHeader(title: 'Account'),
             Card(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: cs.outlineVariant.withOpacity(0.5)),
+              ),
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(8.0),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Account', style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 10),
-                    _kv('Name', user?.displayName),
-                    _kv('Email', user?.email),
-                    _kv('UID', user?.uid),
-                    const SizedBox(height: 12),
                     ListTile(
-                      leading: const Icon(Icons.workspace_premium),
+                      leading: CircleAvatar(
+                        backgroundColor: cs.primaryContainer,
+                        child: Text(
+                          user?.displayName?.characters.first.toUpperCase() ??
+                              'U',
+                          style: TextStyle(color: cs.onPrimaryContainer),
+                        ),
+                      ),
+                      title: Text(
+                        user?.displayName ?? 'User',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Text(user?.email ?? ''),
+                    ),
+                    const Divider(indent: 16, endIndent: 16),
+                    ListTile(
+                      leading: const Icon(Icons.workspace_premium_outlined),
                       title: const Text('Subscription Plan'),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => context.push(PlanScreen.routePath),
                     ),
-                    const SizedBox(height: 12),
-                    FilledButton(
-                      onPressed: () async {
+                    ListTile(
+                      leading: Icon(Icons.logout, color: cs.error),
+                      title: Text(
+                        'Sign out',
+                        style: TextStyle(color: cs.error),
+                      ),
+                      onTap: () async {
                         final repo = ref.read(authRepositoryProvider);
                         await repo.signOut();
                       },
-                      child: const Text('Sign out'),
                     ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 24),
+
+            // Router Section
+            ProHeader(title: 'Router Configuration'),
             Card(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: cs.outlineVariant.withOpacity(0.5)),
+              ),
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(8),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Active router', style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 10),
-                    if (active == null) const Text('No active router selected.'),
+                    if (active == null)
+                      const ListTile(
+                        leading: Icon(Icons.router_outlined),
+                        title: Text('No active router'),
+                        subtitle: Text('Select a router to access settings'),
+                      ),
                     if (active != null) ...[
-                      _kv('Name', active.routerName),
-                      _kv('Host', active.host),
-                      _kv('User', active.username),
-                      const SizedBox(height: 12),
-                      OutlinedButton.icon(
-                        onPressed: () => ref.read(activeRouterProvider.notifier).clear(),
-                        icon: const Icon(Icons.logout),
-                        label: const Text('Disconnect'),
+                      ListTile(
+                        leading: const Icon(Icons.router),
+                        title: Text(
+                          active.routerName,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Text('${active.host} • ${active.username}'),
+                        trailing: OutlinedButton(
+                          onPressed: () =>
+                              ref.read(activeRouterProvider.notifier).clear(),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          child: const Text('Disconnect'),
+                        ),
+                      ),
+                      const Divider(indent: 16, endIndent: 16),
+                      ListTile(
+                        leading: const Icon(Icons.wifi_tethering),
+                        title: const Text('Hotspot Setup Wizard'),
+                        subtitle: const Text(
+                          'Configure bridge, pool, NAT & profiles',
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          context.push(
+                            HotspotSetupWizardScreen.routePath,
+                            extra: HotspotSetupArgs(
+                              routerId: active.routerId,
+                              host: active.host,
+                              username: active.username,
+                              password: active.password,
+                            ),
+                          );
+                        },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.restart_alt),
+                        title: const Text('Re-initialize Router'),
+                        subtitle: const Text('Run onboarding checks again'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          context.push(
+                            RouterInitializationScreen.routePath,
+                            extra: RouterInitializationArgs(
+                              host: active.host,
+                              username: active.username,
+                              password: active.password,
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ],
                 ),
               ),
             ),
+
+            const SizedBox(height: 24),
+            Center(
+              child: Text('Version 1.0.0', style: TextStyle(color: cs.outline)),
+            ),
           ],
         ),
       ),
     );
   }
-
-  Widget _kv(String k, String? v) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(width: 90, child: Text(k, style: const TextStyle(fontWeight: FontWeight.w600))),
-          Expanded(child: Text(v?.isNotEmpty == true ? v! : '—')),
-        ],
-      ),
-    );
-  }
 }
-

@@ -26,6 +26,7 @@ class MainShellScreen extends StatelessWidget {
             icon: Icon(Icons.workspaces_outline),
             label: 'Workspace',
           ),
+          NavigationDestination(icon: Icon(Icons.web), label: 'Templates'),
           NavigationDestination(
             icon: Icon(Icons.insights_outlined),
             label: 'Reports',
@@ -39,4 +40,3 @@ class MainShellScreen extends StatelessWidget {
     );
   }
 }
-

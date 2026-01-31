@@ -60,7 +60,8 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // Router-first: guard workspace routes if no active router.
       final loc = state.matchedLocation;
-      final isWorkspace = loc.startsWith(RouterHomeScreen.routePath) ||
+      final isWorkspace =
+          loc.startsWith(RouterHomeScreen.routePath) ||
           loc.startsWith(HotspotUserProfilesScreen.routePath) ||
           loc.startsWith(VouchersScreen.routePath) ||
           loc.startsWith(GenerateVouchersScreen.routePath) ||
@@ -83,7 +84,9 @@ final routerProvider = Provider<GoRouter>((ref) {
           final extra = state.extra;
           if (extra is! RouterEntry) {
             return const Scaffold(
-              body: SafeArea(child: Center(child: Text('Missing router data.'))),
+              body: SafeArea(
+                child: Center(child: Text('Missing router data.')),
+              ),
             );
           }
           return SavedRouterConnectScreen(router: extra);
@@ -103,7 +106,9 @@ final routerProvider = Provider<GoRouter>((ref) {
           final extra = state.extra;
           if (extra is! MndpMessage) {
             return const Scaffold(
-              body: SafeArea(child: Center(child: Text('Missing router details.'))),
+              body: SafeArea(
+                child: Center(child: Text('Missing router details.')),
+              ),
             );
           }
           return RouterDeviceDetailScreen(message: extra);
@@ -116,7 +121,9 @@ final routerProvider = Provider<GoRouter>((ref) {
           final extra = state.extra;
           if (extra is! Map<String, String>) {
             return const Scaffold(
-              body: SafeArea(child: Center(child: Text('Missing template data.'))),
+              body: SafeArea(
+                child: Center(child: Text('Missing template data.')),
+              ),
             );
           }
           return PortalTemplateEditorScreen(
@@ -142,17 +149,16 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: HotspotUserProfilesScreen.routePath,
                 builder: (context, state) => const HotspotUserProfilesScreen(),
               ),
-              GoRoute(
-                path: PortalTemplateGridScreen.routePath,
-                builder: (context, state) => const PortalTemplateGridScreen(),
-              ),
+
               GoRoute(
                 path: VouchersScreen.routePath,
                 builder: (context, state) {
                   final extra = state.extra;
                   if (extra is! VouchersArgs) {
                     return const Scaffold(
-                      body: SafeArea(child: Center(child: Text('Missing vouchers data.'))),
+                      body: SafeArea(
+                        child: Center(child: Text('Missing vouchers data.')),
+                      ),
                     );
                   }
                   return VouchersScreen(args: extra);
@@ -164,7 +170,9 @@ final routerProvider = Provider<GoRouter>((ref) {
                   final extra = state.extra;
                   if (extra is! GenerateVouchersArgs) {
                     return const Scaffold(
-                      body: SafeArea(child: Center(child: Text('Missing generator data.'))),
+                      body: SafeArea(
+                        child: Center(child: Text('Missing generator data.')),
+                      ),
                     );
                   }
                   return GenerateVouchersScreen(args: extra);
@@ -176,7 +184,9 @@ final routerProvider = Provider<GoRouter>((ref) {
                   final extra = state.extra;
                   if (extra is! PrintVouchersArgs) {
                     return const Scaffold(
-                      body: SafeArea(child: Center(child: Text('Missing print data.'))),
+                      body: SafeArea(
+                        child: Center(child: Text('Missing print data.')),
+                      ),
                     );
                   }
                   return PrintVouchersScreen(args: extra);
@@ -188,7 +198,11 @@ final routerProvider = Provider<GoRouter>((ref) {
                   final extra = state.extra;
                   if (extra is! RouterInitializationArgs) {
                     return const Scaffold(
-                      body: SafeArea(child: Center(child: Text('Missing initialization data.'))),
+                      body: SafeArea(
+                        child: Center(
+                          child: Text('Missing initialization data.'),
+                        ),
+                      ),
                     );
                   }
                   return RouterInitializationScreen(args: extra);
@@ -200,7 +214,9 @@ final routerProvider = Provider<GoRouter>((ref) {
                   final extra = state.extra;
                   if (extra is! RouterRebootWaitArgs) {
                     return const Scaffold(
-                      body: SafeArea(child: Center(child: Text('Missing reboot data.'))),
+                      body: SafeArea(
+                        child: Center(child: Text('Missing reboot data.')),
+                      ),
                     );
                   }
                   return RouterRebootWaitScreen(args: extra);
@@ -212,11 +228,25 @@ final routerProvider = Provider<GoRouter>((ref) {
                   final extra = state.extra;
                   if (extra is! HotspotSetupArgs) {
                     return const Scaffold(
-                      body: SafeArea(child: Center(child: Text('Missing hotspot setup data.'))),
+                      body: SafeArea(
+                        child: Center(
+                          child: Text('Missing hotspot setup data.'),
+                        ),
+                      ),
                     );
                   }
                   return HotspotSetupWizardScreen(args: extra);
                 },
+              ),
+            ],
+          ),
+
+          // Templates tab
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: PortalTemplateGridScreen.routePath,
+                builder: (context, state) => const PortalTemplateGridScreen(),
               ),
             ],
           ),
@@ -257,4 +287,3 @@ final routerProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
-

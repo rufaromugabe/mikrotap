@@ -11,17 +11,21 @@ import '../../mixins/router_auth_mixin.dart';
 import '../../services/hotspot_portal_service.dart';
 import '../../templates/portal_template.dart';
 import 'portal_template_editor_screen.dart';
+import '../../widgets/thematic_widgets.dart';
 
 class PortalTemplateGridScreen extends ConsumerStatefulWidget {
   const PortalTemplateGridScreen({super.key});
 
-  static const routePath = '/workspace/portal';
+  static const routePath = '/templates';
 
   @override
-  ConsumerState<PortalTemplateGridScreen> createState() => _PortalTemplateGridScreenState();
+  ConsumerState<PortalTemplateGridScreen> createState() =>
+      _PortalTemplateGridScreenState();
 }
 
-class _PortalTemplateGridScreenState extends ConsumerState<PortalTemplateGridScreen> with RouterAuthMixin {
+class _PortalTemplateGridScreenState
+    extends ConsumerState<PortalTemplateGridScreen>
+    with RouterAuthMixin {
   String? _currentThemeId;
   bool _loading = true;
 
@@ -35,53 +39,63 @@ class _PortalTemplateGridScreenState extends ConsumerState<PortalTemplateGridScr
   Future<void> _loadCurrentTheme() async {
     final session = ref.read(activeRouterProvider);
     if (session == null) {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
       return;
     }
 
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString('mikrotap.portal.branding.v1.${session.routerId}');
+    final raw = prefs.getString(
+      'mikrotap.portal.branding.v1.${session.routerId}',
+    );
     if (raw != null && raw.isNotEmpty) {
       try {
         final m = jsonDecode(raw) as Map<String, dynamic>;
-        setState(() {
-          _currentThemeId = m['themeId'] as String? ?? 'midnight';
-          _loading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _currentThemeId = m['themeId'] as String? ?? 'midnight';
+            _loading = false;
+          });
+        }
         return;
-      } catch (_) {
-        // ignore
-      }
+      } catch (_) {}
     }
-    setState(() {
-      _currentThemeId = 'midnight';
-      _loading = false;
-    });
+    if (mounted) {
+      setState(() {
+        _currentThemeId = 'midnight';
+        _loading = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(activeRouterProvider);
+    final cs = Theme.of(context).colorScheme;
+
     if (session == null) {
-      return const Scaffold(
-        body: SafeArea(child: Center(child: Text('No active router.'))),
+      return Scaffold(
+        backgroundColor: cs.surface,
+        appBar: AppBar(title: const Text('Portal Templates')),
+        body: const Center(child: Text('No active router.')),
       );
     }
 
-    // Show loading while verifying connection
     if (isVerifyingConnection) {
       return buildConnectionVerifyingWidget();
     }
 
     if (_loading) {
-      return const Scaffold(
-        body: SafeArea(child: Center(child: CircularProgressIndicator())),
+      return Scaffold(
+        backgroundColor: cs.surface,
+        appBar: AppBar(title: const Text('Portal Templates')),
+        body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     final templates = HotspotPortalService.templates;
 
     return Scaffold(
+      backgroundColor: cs.surface,
       appBar: AppBar(
         title: const Text('Portal Templates'),
         actions: [
@@ -95,49 +109,75 @@ class _PortalTemplateGridScreenState extends ConsumerState<PortalTemplateGridScr
       body: SafeArea(
         child: Column(
           children: [
-            // Router info card
-            Card(
-              margin: const EdgeInsets.all(16),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            session.routerName,
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Host: ${session.host}',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (_currentThemeId != null)
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: ProCard(
+                padding: const EdgeInsets.all(20),
+                children: [
+                  Row(
+                    children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primaryContainer,
-                          borderRadius: BorderRadius.circular(12),
+                          color: cs.primary.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
                         ),
-                        child: Text(
-                          'Active: ${HotspotPortalService.getTemplateById(_currentThemeId).name}',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Theme.of(context).colorScheme.onPrimaryContainer,
+                        child: Icon(Icons.brush_outlined, color: cs.primary),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Branding Preview',
+                              style: TextStyle(
                                 fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: cs.onSurface,
                               ),
+                            ),
+                            Text(
+                              'Target: ${session.routerName}',
+                              style: TextStyle(
+                                color: cs.onSurfaceVariant,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                  ],
-                ),
+                      if (_currentThemeId != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: cs.secondary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            HotspotPortalService.getTemplateById(
+                              _currentThemeId,
+                            ).name.toUpperCase(),
+                            style: TextStyle(
+                              color: cs.secondary,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 10,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
               ),
             ),
-            // Template grid
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16.0),
+              child: ProHeader(title: 'Available Templates'),
+            ),
             Expanded(
               child: GridView.builder(
                 padding: const EdgeInsets.all(16),
@@ -145,7 +185,7 @@ class _PortalTemplateGridScreenState extends ConsumerState<PortalTemplateGridScr
                   crossAxisCount: 2,
                   crossAxisSpacing: 16,
                   mainAxisSpacing: 16,
-                  childAspectRatio: 0.6,
+                  childAspectRatio: 0.65,
                 ),
                 itemCount: templates.length,
                 itemBuilder: (context, index) {
@@ -156,13 +196,15 @@ class _PortalTemplateGridScreenState extends ConsumerState<PortalTemplateGridScr
                     isActive: isActive,
                     routerName: session.routerName,
                     onTap: () {
-                      context.push(
-                        PortalTemplateEditorScreen.routePath,
-                        extra: {
-                          'templateId': template.id,
-                          'routerName': session.routerName,
-                        },
-                      ).then((_) => _loadCurrentTheme());
+                      context
+                          .push(
+                            PortalTemplateEditorScreen.routePath,
+                            extra: {
+                              'templateId': template.id,
+                              'routerName': session.routerName,
+                            },
+                          )
+                          .then((_) => _loadCurrentTheme());
                     },
                   );
                 },
@@ -205,12 +247,7 @@ class _TemplatePreviewCardState extends State<_TemplatePreviewCard> {
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageFinished: (String url) {
-            // Mark preview as ready after page loads
-            if (mounted) {
-              setState(() {
-                _previewReady = true;
-              });
-            }
+            if (mounted) setState(() => _previewReady = true);
           },
         ),
       );
@@ -225,97 +262,115 @@ class _TemplatePreviewCardState extends State<_TemplatePreviewCard> {
       themeId: widget.template.id,
     );
 
-    final html = HotspotPortalService.buildLoginHtmlPreview(branding: branding, isGridPreview: true);
+    final html = HotspotPortalService.buildLoginHtmlPreview(
+      branding: branding,
+      isGridPreview: true,
+    );
     _previewController.loadHtmlString(html);
-    // Don't set _previewReady here - wait for onPageFinished
   }
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: widget.isActive ? 4 : 1,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: widget.isActive
-              ? Theme.of(context).colorScheme.primary
-              : Colors.transparent,
-          width: widget.isActive ? 2 : 0,
-        ),
-      ),
-      child: InkWell(
-        onTap: widget.onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Preview
-            Expanded(
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                child: Container(
-                  color: Colors.grey[200],
-                  child: _previewReady
-                      ? IgnorePointer(
-                          child: WebViewWidget(controller: _previewController),
-                        )
-                      : const Center(child: CircularProgressIndicator()),
-                ),
-              ),
-            ),
-            // Template info
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          widget.template.name,
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+    final cs = Theme.of(context).colorScheme;
+
+    return ProCard(
+      padding: EdgeInsets.zero,
+      children: [
+        Expanded(
+          child: Stack(
+            children: [
+              InkWell(
+                onTap: widget.onTap,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(20),
+                        ),
+                        child: Container(
+                          color: cs.surfaceContainerHighest.withValues(
+                            alpha: 0.3,
+                          ),
+                          child: _previewReady
+                              ? IgnorePointer(
+                                  child: WebViewWidget(
+                                    controller: _previewController,
+                                  ),
+                                )
+                              : const Center(
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
                         ),
                       ),
-                      if (widget.isActive)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.primary,
-                            borderRadius: BorderRadius.circular(8),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.template.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          child: Text(
-                            'ACTIVE',
-                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                  color: Theme.of(context).colorScheme.onPrimary,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 9,
-                                ),
+                          const SizedBox(height: 2),
+                          Text(
+                            widget.template.description,
+                            style: TextStyle(
+                              color: cs.onSurfaceVariant,
+                              fontSize: 10,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                    ],
-                  ),
-                  if (widget.template.description.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      widget.template.description,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            fontSize: 11,
-                          ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                        ],
+                      ),
                     ),
                   ],
-                ],
+                ),
               ),
-            ),
-          ],
+              if (widget.isActive)
+                Positioned(
+                  top: 10,
+                  right: 10,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: cs.primary,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: cs.primary.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: const Text(
+                      'ACTIVE',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 8,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
-      ),
+      ],
     );
   }
 }

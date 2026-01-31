@@ -9,6 +9,8 @@ import '../../services/hotspot_provisioning_service.dart';
 import 'router_home_screen.dart';
 import '../vouchers/vouchers_screen.dart';
 
+import '../../widgets/thematic_widgets.dart';
+
 class HotspotSetupArgs {
   const HotspotSetupArgs({
     required this.routerId,
@@ -31,13 +33,11 @@ class HotspotSetupWizardScreen extends StatefulWidget {
   final HotspotSetupArgs args;
 
   @override
-  State<HotspotSetupWizardScreen> createState() => _HotspotSetupWizardScreenState();
+  State<HotspotSetupWizardScreen> createState() =>
+      _HotspotSetupWizardScreenState();
 }
 
-enum HotspotWizardPreset {
-  cafeGuestIsolated,
-  officeShared,
-}
+enum HotspotWizardPreset { cafeGuestIsolated, officeShared }
 
 class _HotspotSetupWizardScreenState extends State<HotspotSetupWizardScreen> {
   bool _loading = false;
@@ -91,7 +91,10 @@ class _HotspotSetupWizardScreenState extends State<HotspotSetupWizardScreen> {
 
   bool _isLikelyLanPort(String name) {
     final ln = name.toLowerCase();
-    return ln.startsWith('ether') || ln.startsWith('wlan') || ln.startsWith('wifi') || ln.startsWith('lte');
+    return ln.startsWith('ether') ||
+        ln.startsWith('wlan') ||
+        ln.startsWith('wifi') ||
+        ln.startsWith('lte');
   }
 
   ({String ip, int cidr})? _parseAddressCidr(String? address) {
@@ -107,7 +110,6 @@ class _HotspotSetupWizardScreenState extends State<HotspotSetupWizardScreen> {
   void _fillPoolFromGateway(String gateway) {
     final parts = gateway.trim().split('.');
     if (parts.length != 4) return;
-    // Best-effort: assume /24-ish and keep last octet ranges sane.
     final base = '${parts[0]}.${parts[1]}.${parts[2]}.';
     _poolStartCtrl.text = '${base}10';
     _poolEndCtrl.text = '${base}254';
@@ -123,7 +125,6 @@ class _HotspotSetupWizardScreenState extends State<HotspotSetupWizardScreen> {
   }
 
   Future<void> _autoFillFromRouterLan({required bool force}) async {
-    // On first load, be non-destructive. On explicit user action, overwrite.
     if (!force && !_looksLikeDefaultAddressing()) return;
     await _withClient((c) async {
       final rows = await c.printRows('/ip/address/print');
@@ -165,7 +166,6 @@ class _HotspotSetupWizardScreenState extends State<HotspotSetupWizardScreen> {
   }
 
   void _applyPreset(HotspotWizardPreset preset) {
-    // Presets should NOT change the router's IP. They only tweak behavior (isolation).
     setState(() {
       _preset = preset;
       switch (preset) {
@@ -182,7 +182,9 @@ class _HotspotSetupWizardScreenState extends State<HotspotSetupWizardScreen> {
     }
   }
 
-  Future<void> _withClient(Future<void> Function(RouterOsApiClient c) action) async {
+  Future<void> _withClient(
+    Future<void> Function(RouterOsApiClient c) action,
+  ) async {
     setState(() {
       _loading = true;
       _status = null;
@@ -195,14 +197,19 @@ class _HotspotSetupWizardScreenState extends State<HotspotSetupWizardScreen> {
     );
 
     try {
-      await c.login(username: widget.args.username, password: widget.args.password);
+      await c.login(
+        username: widget.args.username,
+        password: widget.args.password,
+      );
       await action(c);
     } on RouterOsApiException catch (e) {
       setState(() => _status = e.message);
     } on SocketException catch (e) {
       setState(() => _status = 'Network error: ${e.message}');
     } on TimeoutException {
-      setState(() => _status = 'Timeout connecting to ${widget.args.host}:8728');
+      setState(
+        () => _status = 'Timeout connecting to ${widget.args.host}:8728',
+      );
     } catch (e) {
       setState(() => _status = 'Error: $e');
     } finally {
@@ -214,21 +221,24 @@ class _HotspotSetupWizardScreenState extends State<HotspotSetupWizardScreen> {
   Future<void> _refreshInterfaces() async {
     await _withClient((c) async {
       final rows = await c.printRows('/interface/print');
-      // Keep only physical-ish interfaces (ether, wlan). Still show everything, but default to these.
       setState(() {
         _interfaces = rows;
         final names = rows.map((r) => r['name']).whereType<String>().toList();
-        if (_wanInterface != null && _wanInterface!.isNotEmpty && !names.contains(_wanInterface)) {
-          _wanInterface = null; // old value no longer exists
+        if (_wanInterface != null &&
+            _wanInterface!.isNotEmpty &&
+            !names.contains(_wanInterface)) {
+          _wanInterface = null;
         }
-        if ((_wanInterface == null || _wanInterface!.isEmpty) && names.isNotEmpty) {
+        if ((_wanInterface == null || _wanInterface!.isEmpty) &&
+            names.isNotEmpty) {
           _wanInterface = names.first;
         }
 
-        // Auto-select sensible guest access ports to reduce “technical” setup.
         if (_lanInterfaces.isEmpty) {
           final wan = _wanInterface;
-          final candidates = names.where((n) => (wan == null || n != wan) && _isLikelyLanPort(n)).toList();
+          final candidates = names
+              .where((n) => (wan == null || n != wan) && _isLikelyLanPort(n))
+              .toList();
           if (candidates.isNotEmpty) {
             _lanInterfaces.addAll(candidates);
           }
@@ -287,14 +297,16 @@ class _HotspotSetupWizardScreenState extends State<HotspotSetupWizardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     return Scaffold(
+      backgroundColor: cs.surface,
       appBar: AppBar(
-        title: const Text('Hotspot setup'),
+        title: const Text('Hotspot Setup'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
-            final r = GoRouter.of(context);
-            if (r.canPop()) {
+            if (context.canPop()) {
               context.pop();
             } else {
               context.go(RouterHomeScreen.routePath);
@@ -314,115 +326,116 @@ class _HotspotSetupWizardScreenState extends State<HotspotSetupWizardScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Preset', style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 10),
-                    SegmentedButton<HotspotWizardPreset>(
-                      segments: const [
-                        ButtonSegment(
-                          value: HotspotWizardPreset.officeShared,
-                          label: Text('Office (Shared)'),
-                          icon: Icon(Icons.group_outlined),
-                        ),
-                        ButtonSegment(
-                          value: HotspotWizardPreset.cafeGuestIsolated,
-                          label: Text('Cafe Guest (Isolated)'),
-                          icon: Icon(Icons.lock_outline),
-                        ),
-                      ],
-                      selected: {_preset},
-                      onSelectionChanged: _loading ? null : (s) => _applyPreset(s.first),
-                      showSelectedIcon: false,
+            const ProHeader(title: 'Choose Preset'),
+            ProCard(
+              children: [
+                SegmentedButton<HotspotWizardPreset>(
+                  segments: const [
+                    ButtonSegment(
+                      value: HotspotWizardPreset.officeShared,
+                      label: Text('Office'),
+                      icon: Icon(Icons.business_outlined),
                     ),
-                    const SizedBox(height: 10),
-                    Text(
-                      _preset == HotspotWizardPreset.cafeGuestIsolated
-                          ? 'Guest mode: clients can’t see each other or local devices on the hotspot LAN.'
-                          : 'Shared mode: clients can access devices on the hotspot LAN (printers, NAS, etc.).',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: SwitchListTile.adaptive(
-                            contentPadding: EdgeInsets.zero,
-                            value: _clientIsolation,
-                            onChanged: _loading
-                                ? null
-                                : (v) {
-                                    setState(() => _clientIsolation = v);
-                                  },
-                            title: const Text('Client isolation'),
-                            subtitle: const Text('Blocks hotspot client-to-client traffic'),
-                          ),
-                        ),
-                      ],
+                    ButtonSegment(
+                      value: HotspotWizardPreset.cafeGuestIsolated,
+                      label: Text('Cafe Guest'),
+                      icon: Icon(Icons.local_cafe_outlined),
                     ),
                   ],
+                  selected: {_preset},
+                  onSelectionChanged: _loading
+                      ? null
+                      : (s) => _applyPreset(s.first),
                 ),
-              ),
+                const SizedBox(height: 16),
+                Text(
+                  _preset == HotspotWizardPreset.cafeGuestIsolated
+                      ? 'Best for public spaces: Clients are isolated and can\'t access each other or your local devices.'
+                      : 'Best for internal use: Clients can access shared printers, servers, and other local devices.',
+                  style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  value: _clientIsolation,
+                  onChanged: _loading
+                      ? null
+                      : (v) => setState(() => _clientIsolation = v),
+                  title: const Text(
+                    'Client Isolation',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  subtitle: const Text(
+                    'Prevent guest-to-guest communication',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  secondary: Icon(
+                    Icons.security,
+                    color: _clientIsolation ? cs.primary : cs.outline,
+                  ),
+                ),
+              ],
             ),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Connections', style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 10),
-                    DropdownButtonFormField<String?>(
-                      value: (_wanInterface != null &&
-                              _wanInterface!.isNotEmpty &&
-                              _interfaces.any((i) => (i['name'] ?? '') == _wanInterface))
-                          ? _wanInterface
-                          : null,
-                      decoration: const InputDecoration(
-                        labelText: 'Internet uplink (optional)',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: [
-                        const DropdownMenuItem(value: null, child: Text('None')),
-                        ..._interfaces
-                            .map((i) => i['name'])
-                            .whereType<String>()
-                            .map(
-                              (name) => DropdownMenuItem(
-                                value: name,
-                                child: Text(name),
-                              ),
-                            ),
-                      ],
-                      onChanged: _loading ? null : (v) => setState(() => _wanInterface = v),
+
+            const ProHeader(title: 'Network Configuration'),
+            ProCard(
+              children: [
+                DropdownButtonFormField<String?>(
+                  value:
+                      (_wanInterface != null &&
+                          _wanInterface!.isNotEmpty &&
+                          _interfaces.any(
+                            (i) => (i['name'] ?? '') == _wanInterface,
+                          ))
+                      ? _wanInterface
+                      : null,
+                  decoration: const InputDecoration(
+                    labelText: 'Internet Uplink (WAN)',
+                    hintText: 'Optional',
+                  ),
+                  items: [
+                    const DropdownMenuItem(
+                      value: null,
+                      child: Text('None (Internal Only)'),
                     ),
-                    const SizedBox(height: 12),
-                    ExpansionTile(
-                      tilePadding: EdgeInsets.zero,
-                      title: const Text('Guest access ports'),
-                      subtitle: Text(
-                        _lanInterfaces.isEmpty ? 'Tap to choose where guests connect' : 'Selected: ${_lanInterfaces.join(', ')}',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      children: [
-                        const SizedBox(height: 6),
-                        Text(
-                          'Pick the ports your guests will use (Wi‑Fi and/or Ethernet).',
-                          style: Theme.of(context).textTheme.bodySmall,
+                    ..._interfaces
+                        .map((i) => i['name'])
+                        .whereType<String>()
+                        .map(
+                          (name) =>
+                              DropdownMenuItem(value: name, child: Text(name)),
                         ),
-                        const SizedBox(height: 8),
-                        ..._interfaces
-                            .map((i) => i['name'])
-                            .whereType<String>()
-                            .where(_isLikelyLanPort)
-                            .map((name) {
+                  ],
+                  onChanged: _loading
+                      ? null
+                      : (v) => setState(() => _wanInterface = v),
+                ),
+                const SizedBox(height: 16),
+
+                ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  title: const Text(
+                    'Guest Access Ports',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  subtitle: Text(
+                    _lanInterfaces.isEmpty
+                        ? 'Select ports for guests'
+                        : 'Selected: ${_lanInterfaces.join(', ')}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: cs.primary),
+                  ),
+                  children: [
+                    const SizedBox(height: 8),
+                    ..._interfaces
+                        .map((i) => i['name'])
+                        .whereType<String>()
+                        .where(_isLikelyLanPort)
+                        .map((name) {
                           final selected = _lanInterfaces.contains(name);
-                          final isWan = (_wanInterface != null && name == _wanInterface);
+                          final isWan =
+                              (_wanInterface != null && name == _wanInterface);
                           return CheckboxListTile(
                             value: selected,
                             onChanged: (_loading || isWan)
@@ -436,154 +449,149 @@ class _HotspotSetupWizardScreenState extends State<HotspotSetupWizardScreen> {
                                       }
                                     });
                                   },
-                            title: Text(name),
-                            subtitle: isWan ? const Text('Currently selected as Internet uplink') : null,
+                            title: Text(
+                              name,
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                            subtitle: isWan
+                                ? const Text(
+                                    'WAN Port',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.orange,
+                                    ),
+                                  )
+                                : null,
                             dense: true,
                             controlAffinity: ListTileControlAffinity.leading,
                           );
                         }),
-                      ],
+                  ],
+                ),
+              ],
+            ),
+
+            const ProHeader(title: 'Addressing & Pool'),
+            ProCard(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'IP Range: ${_friendlyPoolSummary()}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Auto-detect LAN',
+                      onPressed: _loading
+                          ? null
+                          : () => _autoFillFromRouterLan(force: true),
+                      icon: const Icon(Icons.auto_fix_high),
+                    ),
+                    TextButton(
+                      onPressed: () =>
+                          setState(() => _showAdvanced = !_showAdvanced),
+                      child: Text(_showAdvanced ? 'Hide' : 'Edit'),
                     ),
                   ],
                 ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text('Guest network', style: Theme.of(context).textTheme.titleMedium),
-                        ),
-                        TextButton.icon(
-                          onPressed: _loading
-                              ? null
-                              : () {
-                                  setState(() => _showAdvanced = !_showAdvanced);
-                                },
-                          icon: Icon(_showAdvanced ? Icons.expand_less : Icons.tune),
-                          label: Text(_showAdvanced ? 'Hide details' : 'Change'),
-                        ),
-                        IconButton(
-                          tooltip: 'Use router’s current LAN (auto-detect)',
-                          onPressed: _loading ? null : () => _autoFillFromRouterLan(force: true),
-                          icon: const Icon(Icons.auto_fix_high),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      _preset == HotspotWizardPreset.cafeGuestIsolated
-                          ? 'Dedicated guest network (recommended for cafés).'
-                          : 'Uses your router’s existing LAN network (recommended for offices).',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: 10),
-                    _kv('Guest IPs look like', _friendlyPoolSummary()),
-                    if (_showAdvanced) ...[
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: TextField(
-                              controller: _gatewayCtrl,
-                              enabled: !_loading,
-                              decoration: const InputDecoration(
-                                labelText: 'Gateway (router IP for guests)',
-                                border: OutlineInputBorder(),
-                              ),
-                              onChanged: (_) => _fillPoolFromGateway(_gatewayCtrl.text),
-                            ),
+                if (_showAdvanced) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: TextField(
+                          controller: _gatewayCtrl,
+                          enabled: !_loading,
+                          decoration: const InputDecoration(
+                            labelText: 'Gateway IP',
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            flex: 1,
-                            child: TextField(
-                              controller: _cidrCtrl,
-                              enabled: !_loading,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'Subnet size (CIDR)',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                          ),
-                        ],
+                          onChanged: (_) =>
+                              _fillPoolFromGateway(_gatewayCtrl.text),
+                        ),
                       ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _poolStartCtrl,
-                              enabled: !_loading,
-                              decoration: const InputDecoration(
-                                labelText: 'Guest IP range (start)',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: TextField(
-                              controller: _poolEndCtrl,
-                              enabled: !_loading,
-                              decoration: const InputDecoration(
-                                labelText: 'Guest IP range (end)',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Tip: If you’re unsure, keep the defaults or tap the magic wand to auto-detect your LAN.',
-                        style: Theme.of(context).textTheme.bodySmall,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 1,
+                        child: TextField(
+                          controller: _cidrCtrl,
+                          enabled: !_loading,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(labelText: 'CIDR'),
+                        ),
                       ),
                     ],
-                    const SizedBox(height: 12),
-                    FilledButton.icon(
-                      onPressed: _loading ? null : _applyProvisioning,
-                      icon: _loading
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.play_arrow),
-                      label: const Text('Apply Hotspot setup'),
-                    ),
-                  ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _poolStartCtrl,
+                          enabled: !_loading,
+                          decoration: const InputDecoration(
+                            labelText: 'Pool Start',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                          controller: _poolEndCtrl,
+                          enabled: !_loading,
+                          decoration: const InputDecoration(
+                            labelText: 'Pool End',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+
+            const SizedBox(height: 32),
+            FilledButton.icon(
+              onPressed: _loading ? null : _applyProvisioning,
+              icon: _loading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.rocket_launch_outlined),
+              label: Text(
+                _loading ? (_status ?? 'Applying...') : 'Apply Hotspot Setup',
+              ),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
                 ),
               ),
             ),
-            if (_status != null) ...[
-              const SizedBox(height: 12),
-              Text(_status!),
+            if (_status != null && !_loading) ...[
+              const SizedBox(height: 16),
+              Center(
+                child: Text(
+                  _status!,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: cs.error,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
             ],
+            const SizedBox(height: 48),
           ],
         ),
       ),
     );
   }
-
-  Widget _kv(String k, String v) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 6),
-      child: Row(
-        children: [
-          SizedBox(width: 90, child: Text(k, style: const TextStyle(fontWeight: FontWeight.w600))),
-          Expanded(child: Text(v)),
-        ],
-      ),
-    );
-  }
 }
-
