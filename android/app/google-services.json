@@ -12,7 +12,12 @@
           "package_name": "com.example.mikrotap"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "651530704617-7khval8ek1m0fiui2iu1v3pb56teq9s4.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAbGQa2YvUwEB_1k7bBCs5YSGlT9lUOQl8"
@@ -20,7 +25,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "651530704617-7khval8ek1m0fiui2iu1v3pb56teq9s4.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "651530704617-21kb80kfldu50nf6slugu0of6eluob78.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.mikrotap"
+              }
+            }
+          ]
         }
       }
     }
